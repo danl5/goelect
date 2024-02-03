@@ -1,6 +1,6 @@
 module github.com/danli001/goelect
 
-go 1.21.5
+go 1.21
 
 require (
 	github.com/looplab/fsm v1.0.1

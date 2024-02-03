@@ -3,6 +3,7 @@ package consensus
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/looplab/fsm"
@@ -67,7 +68,7 @@ func (c *Consensus) Run() (<-chan model.StateTransition, error) {
 		// create a new RPC client for every peer
 		clt, err := rpc.NewRpcClient(nodeCfg.Address, c.logger)
 		if err != nil {
-			c.logger.Error("can not connect to peer", "peer", nodeCfg.Address)
+			c.logger.Error("can not connect to peer", "peer", nodeCfg.Address, "error", err.Error())
 			return nil, err
 		}
 		rpcClients[nodeCfg.Address] = clt
@@ -109,7 +110,7 @@ func (c *Consensus) HeartBeat(args *model.HeartBeatRequest, reply *model.HeartBe
 }
 
 func (c *Consensus) RequestVote(args *model.RequestVoteRequest, reply *model.RequestVoteResponse) error {
-	c.logger.Info("receive vote request", "from", args.Node, "term", args.Term)
+	c.logger.Info("receive vote request", "from", args.Node, "term", args.Term, "current term", c.term)
 	//
 	if c.node.NoVote {
 		model.VoteResponse(reply, c.node.Node, false, common.VoteNoVoteNode.String())
@@ -169,8 +170,9 @@ func (c *Consensus) runLeader() error {
 	defer tk.Stop()
 
 	for {
+		var errCount int
 		//
-		errCount := c.sendHeartBeat()
+		c.sendHeartBeat(&errCount)
 		//
 		if errCount >= c.countVoteNode()/2+1 {
 			c.sendEvent(model.EventLeaveLeader)
@@ -267,8 +269,12 @@ func (c *Consensus) runCandidate() error {
 func (c *Consensus) tryToBecomeLeader() error {
 	ts := time.NewTimer(electTimeout)
 	defer ts.Stop()
-
+	electDelay := func() {
+		delayDuration := time.Duration(rand.Int63n(int64(electTimeout)))
+		time.Sleep(delayDuration)
+	}
 	for {
+		electDelay()
 		c.incrementByOne()
 		voteCount := 1
 		voteChan := make(chan model.Node)
@@ -353,9 +359,8 @@ func (c *Consensus) runEventHandler() {
 	}()
 }
 
-func (c *Consensus) sendHeartBeat() (errorCount int) {
+func (c *Consensus) sendHeartBeat(errorCount *int) {
 	g := errgroup.Group{}
-
 	for nodeAddr, clt := range c.rpcClients {
 		nodeAddr, clt := nodeAddr, clt
 		if nodeAddr == c.node.Address {
@@ -365,13 +370,13 @@ func (c *Consensus) sendHeartBeat() (errorCount int) {
 			resp := &model.HeartBeatResponse{}
 			err := clt.Call("Consensus.HeartBeat", &model.HeartBeatRequest{Node: c.node.Address, Term: c.term}, resp)
 			if err != nil {
-				errorCount += 1
-				c.logger.Error("failed to send heartbeat", "peer", nodeAddr)
-				return err
+				*errorCount += 1
+				c.logger.Error("failed to send heartbeat", "peer", nodeAddr, "error", err.Error())
+				return fmt.Errorf("heartbeat, failed to send heartbeat, peer %s, error %s", nodeAddr, err.Error())
 			}
 			if !resp.Ok {
-				errorCount += 1
-				return fmt.Errorf("heartbeat, peer response not ok, message %s", resp.Message)
+				*errorCount += 1
+				return fmt.Errorf("heartbeat, peer %s response not ok, message %s", nodeAddr, resp.Message)
 			}
 
 			c.logger.Info("send heartbeat to peer", "peer", nodeAddr)
@@ -382,7 +387,6 @@ func (c *Consensus) sendHeartBeat() (errorCount int) {
 	if err := g.Wait(); err != nil {
 		c.logger.Error("leader, heartbeat error", "error", err.Error())
 	}
-
 	return
 }
 
@@ -405,7 +409,7 @@ func (c *Consensus) sendRequestVote(voteChan chan model.Node) error {
 			}, &resp)
 			if err != nil {
 				c.logger.Error("failed to get vote", "peer", nodeAddr)
-				return err
+				return fmt.Errorf("failed to get vote, peer %s, err: %s", nodeAddr, err.Error())
 			}
 			if !resp.Vote {
 				c.logger.Info("peer disagrees with voting for you", "peer", nodeAddr, "message", resp.Message)
