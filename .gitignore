@@ -19,3 +19,9 @@
 
 # Go workspace file
 go.work
+
+# Idea project files
+.idea
+
+# Visual Studio Code metadata files
+.vscode
