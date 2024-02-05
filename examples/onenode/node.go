@@ -4,10 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/danli001/goelect"
-	"github.com/danli001/goelect/internal/log"
 	"github.com/danli001/goelect/internal/model"
 )
 
@@ -75,7 +75,7 @@ func main() {
 			Address: *nodeAddress,
 			ID:      *nodeAddress,
 		},
-	}, &log.ConsoleLogger{})
+	}, slog.Default())
 	if err != nil {
 		panic(err)
 	}
