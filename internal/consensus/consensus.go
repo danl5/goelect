@@ -358,12 +358,14 @@ func (c *Consensus) runEventHandler() {
 		for ev := range c.eventChan {
 			ok := c.fsm.Can(ev.String())
 			if !ok {
-				c.logger.Fatal("wrong event", "current state", c.fsm.Current(), "event", ev.String())
+				c.logger.Error("wrong event", "current state", c.fsm.Current(), "event", ev.String())
+				panic("unrecoverable error: wrong state transition")
 			}
 
 			err := c.fsm.Event(context.TODO(), ev.String())
 			if err != nil {
-				c.logger.Fatal("error state transition", "current state", c.fsm.Current(), "event", ev.String())
+				c.logger.Error("error state transition", "current state", c.fsm.Current(), "event", ev.String())
+				panic("unrecoverable error: wrong state transition")
 			}
 		}
 	}()
