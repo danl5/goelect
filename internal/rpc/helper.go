@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"fmt"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -13,18 +12,18 @@ import (
 )
 
 const (
-	poolInitCap     = 2
-	poolMaxIdle     = 20
+	poolInitCap     = 0
+	poolMaxIdle     = 5
 	poolMaxIdleTime = 15
-	poolMaxCap      = 30
+	poolMaxCap      = 20
 )
 
 const (
-	connectRetryInterval = 1
-	connectMaxTimes      = 3
+	connectRetryInterval    = 1
+	connectMaxRetryInterval = 10
 )
 
-func NewRpcClient(addr string, logger log.Logger) (*Client, error) {
+func NewRpcClient(addr string, logger log.Logger, ping func(client *rpc.Client) error) (*Client, error) {
 	poolConfig := &pool.Config{
 		InitialCap:  poolInitCap,
 		MaxIdle:     poolMaxIdle,
@@ -32,6 +31,7 @@ func NewRpcClient(addr string, logger log.Logger) (*Client, error) {
 		IdleTimeout: poolMaxIdleTime * time.Second,
 		Factory:     func() (interface{}, error) { return rpcClient("tcp", addr, logger) },
 		Close:       func(v interface{}) error { return v.(*rpc.Client).Close() },
+		Ping:        func(i interface{}) error { return ping(i.(*rpc.Client)) },
 	}
 	p, err := pool.NewChannelPool(poolConfig)
 	if err != nil {
@@ -42,21 +42,11 @@ func NewRpcClient(addr string, logger log.Logger) (*Client, error) {
 }
 
 func rpcClient(network string, addr string, logger log.Logger) (*rpc.Client, error) {
-	var retryTimes int
-	for {
-		clt, err := jsonrpc.Dial("tcp", addr)
-		if err == nil {
-			return clt, nil
-		}
-
-		logger.Warn("can not connect to peer", "address", addr, "retry times", retryTimes, "error", err.Error())
-		if retryTimes > connectMaxTimes {
-			return nil, fmt.Errorf("can not connect to address %s after %d times", addr, connectMaxTimes)
-		}
-		retryTimes += 1
-		// exponential backoff
-		<-time.After(time.Duration(connectRetryInterval*retryTimes) * time.Second)
+	clt, err := jsonrpc.Dial(network, addr)
+	if err != nil {
+		return nil, err
 	}
+	return clt, nil
 }
 
 type Client struct {
@@ -116,6 +106,4 @@ func (s *Server) Start(addr string, handler any) error {
 		}
 		go server.ServeCodec(jsonrpc.NewServerCodec(conn))
 	}
-
-	return nil
 }

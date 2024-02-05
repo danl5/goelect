@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	nrpc "net/rpc"
+	"sync"
 	"time"
 
 	"github.com/looplab/fsm"
@@ -19,6 +21,8 @@ import (
 const (
 	// set the election timeout to 200 milliseconds
 	electTimeout = 200 * time.Millisecond
+
+	heartBeatInterval = 150 * time.Millisecond
 )
 
 func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (*Consensus, error) {
@@ -27,6 +31,7 @@ func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (
 		logger:        logger,
 		node:          node,
 		termCache:     &termCache{},
+		rpcClients:    &rpcClients{},
 		leaderChan:    make(chan struct{}, 1),
 		followerChan:  make(chan struct{}, 1),
 		candidateChan: make(chan struct{}, 1),
@@ -45,7 +50,7 @@ type Consensus struct {
 
 	node       model.ElectNode
 	fsm        *fsm.FSM
-	rpcClients map[string]*rpc.Client
+	rpcClients *rpcClients
 
 	eventChan     chan model.NodeEvent
 	nodeStateChan chan model.StateTransition
@@ -58,7 +63,6 @@ type Consensus struct {
 // Run starts the consensus algorithm
 // Returns a channel of state transitions and an error
 func (c *Consensus) Run() (<-chan model.StateTransition, error) {
-	rpcClients := map[string]*rpc.Client{}
 	// iterate through the list of peers
 	for _, nodeCfg := range c.cfg.Peers {
 		if nodeCfg.ID == c.node.ID {
@@ -66,14 +70,16 @@ func (c *Consensus) Run() (<-chan model.StateTransition, error) {
 			continue
 		}
 		// create a new RPC client for every peer
-		clt, err := rpc.NewRpcClient(nodeCfg.Address, c.logger)
+		clt, err := rpc.NewRpcClient(nodeCfg.Address, c.logger, func(client *nrpc.Client) error {
+			var reply string
+			return client.Call("Consensus.Ping", nil, &reply)
+		})
 		if err != nil {
 			c.logger.Error("can not connect to peer", "peer", nodeCfg.Address, "error", err.Error())
 			return nil, err
 		}
-		rpcClients[nodeCfg.Address] = clt
+		c.rpcClients.put(nodeCfg.Address, clt)
 	}
-	c.rpcClients = rpcClients
 	// initialize the node FSM
 	c.initializeFsm()
 	// run the event handler
@@ -147,9 +153,14 @@ func (c *Consensus) RequestVote(args *model.RequestVoteRequest, reply *model.Req
 	return nil
 }
 
+func (c *Consensus) Ping(args struct{}, reply *string) error {
+	*reply = "pong"
+	return nil
+}
+
 func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become leader")
-	c.sendNodeStateTansition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
+	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 	c.node.State = model.NodeStateLeader
 	c.leaderChan = make(chan struct{}, 1)
 	go func() {
@@ -162,11 +173,7 @@ func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
 }
 
 func (c *Consensus) runLeader() error {
-	heartbeatInterval := c.cfg.HeartBeatInterval / 2
-	if heartbeatInterval <= 0 {
-		heartbeatInterval = 1
-	}
-	tk := time.NewTicker(time.Duration(heartbeatInterval) * time.Second)
+	tk := time.NewTicker(heartBeatInterval)
 	defer tk.Stop()
 
 	for {
@@ -189,13 +196,13 @@ func (c *Consensus) runLeader() error {
 
 func (c *Consensus) leaveLeader(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("leave leader")
-	c.sendNodeStateTansition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
+	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.leaderChan)
 }
 
 func (c *Consensus) enterFollower(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become follower")
-	c.sendNodeStateTansition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
+	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 	c.node.State = model.NodeStateFollower
 	c.followerChan = make(chan struct{}, 1)
 	go func() {
@@ -208,7 +215,9 @@ func (c *Consensus) enterFollower(ctx context.Context, ev *fsm.Event) {
 }
 
 func (c *Consensus) runFollower() error {
-	ts := time.NewTimer(time.Duration(c.cfg.HeartBeatInterval) * time.Second)
+	//
+	heartbeatTimeout := heartBeatInterval * 2
+	ts := time.NewTimer(heartbeatTimeout)
 	defer ts.Stop()
 	for {
 		select {
@@ -224,7 +233,7 @@ func (c *Consensus) runFollower() error {
 				default:
 				}
 			}
-			ts.Reset(time.Duration(c.cfg.HeartBeatInterval) * time.Second)
+			ts.Reset(heartbeatTimeout)
 		case <-ts.C:
 			c.sendEvent(model.EventHeartbeatTimeout)
 		}
@@ -233,13 +242,13 @@ func (c *Consensus) runFollower() error {
 
 func (c *Consensus) leaveFollower(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("leave follower")
-	c.sendNodeStateTansition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
+	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.followerChan)
 }
 
 func (c *Consensus) enterCandidate(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become candidate")
-	c.sendNodeStateTansition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
+	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 	c.node.State = model.NodeStateCandidate
 	c.candidateChan = make(chan struct{}, 1)
 	go func() {
@@ -267,8 +276,9 @@ func (c *Consensus) runCandidate() error {
 }
 
 func (c *Consensus) tryToBecomeLeader() error {
-	ts := time.NewTimer(electTimeout)
+	ts := time.NewTicker(electTimeout)
 	defer ts.Stop()
+
 	electDelay := func() {
 		delayDuration := time.Duration(rand.Int63n(int64(electTimeout)))
 		time.Sleep(delayDuration)
@@ -323,18 +333,18 @@ func (c *Consensus) tryToBecomeLeader() error {
 
 func (c *Consensus) leaveCandidate(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("leave candidate")
-	c.sendNodeStateTansition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
+	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.candidateChan)
 }
 
 func (c *Consensus) enterShutdown(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become shutdown")
-	c.sendNodeStateTansition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
+	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 }
 
 func (c *Consensus) leaveShutdown(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("leave shutdown")
-	c.sendNodeStateTansition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
+	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.shutdownChan)
 }
 
@@ -361,8 +371,8 @@ func (c *Consensus) runEventHandler() {
 
 func (c *Consensus) sendHeartBeat(errorCount *int) {
 	g := errgroup.Group{}
-	for nodeAddr, clt := range c.rpcClients {
-		nodeAddr, clt := nodeAddr, clt
+	for rpcClient := range c.rpcClients.iterate() {
+		nodeAddr, clt := rpcClient.address, rpcClient.client
 		if nodeAddr == c.node.Address {
 			continue
 		}
@@ -394,8 +404,8 @@ func (c *Consensus) sendRequestVote(voteChan chan model.Node) error {
 	g := errgroup.Group{}
 	defer close(voteChan)
 
-	for nodeAddr, clt := range c.rpcClients {
-		nodeAddr, clt := nodeAddr, clt
+	for rpcClient := range c.rpcClients.iterate() {
+		nodeAddr, clt := rpcClient.address, rpcClient.client
 		if nodeAddr == c.node.Address {
 			continue
 		}
@@ -434,7 +444,7 @@ func (c *Consensus) sendRequestVote(voteChan chan model.Node) error {
 	return nil
 }
 
-func (c *Consensus) sendNodeStateTansition(state, srcState model.NodeState, transType model.TransitionType) {
+func (c *Consensus) sendNodeStateTransition(state, srcState model.NodeState, transType model.TransitionType) {
 	c.nodeStateChan <- model.StateTransition{
 		State:    state,
 		SrcState: srcState,
@@ -551,4 +561,52 @@ func (t *termCache) incrementByOne() {
 	t.term += 1
 	t.voted = false
 	t.voteFor = ""
+}
+
+type rpcClients struct {
+	clients map[string]*rpc.Client
+	m       sync.RWMutex
+}
+
+func (r *rpcClients) get(addr string) *rpc.Client {
+	r.m.RLock()
+	defer r.m.RUnlock()
+
+	if clt, ok := r.clients[addr]; ok {
+		return clt
+	}
+
+	return nil
+}
+
+func (r *rpcClients) put(addr string, clt *rpc.Client) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	if r.clients == nil {
+		r.clients = map[string]*rpc.Client{}
+	}
+	r.clients[addr] = clt
+}
+
+func (r *rpcClients) iterate() <-chan *rpcClient {
+	c := make(chan *rpcClient)
+	go func() {
+		r.m.RLock()
+		defer r.m.RUnlock()
+
+		for addr, clt := range r.clients {
+			c <- &rpcClient{
+				address: addr,
+				client:  clt,
+			}
+		}
+		close(c)
+	}()
+	return c
+}
+
+type rpcClient struct {
+	address string
+	client  *rpc.Client
 }

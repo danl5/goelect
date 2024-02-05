@@ -1,9 +1,8 @@
 package config
 
 type Config struct {
-	HeartBeatInterval uint         `json:"heartbeat_interval,omitempty"`
-	ConnectTimeout    uint         `json:"connect_timeout,omitempty"`
-	Peers             []NodeConfig `json:"peers" json:"peers,omitempty"`
+	ConnectTimeout uint         `json:"connect_timeout,omitempty"`
+	Peers          []NodeConfig `json:"peers" json:"peers,omitempty"`
 }
 
 type NodeConfig struct {

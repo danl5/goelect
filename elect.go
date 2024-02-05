@@ -23,9 +23,8 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 	}
 
 	c, err := consensus.NewConsensus(&config.Config{
-		HeartBeatInterval: cfg.HeartBeatInterval,
-		ConnectTimeout:    cfg.ConnectTimeout,
-		Peers:             peers,
+		ConnectTimeout: cfg.ConnectTimeout,
+		Peers:          peers,
 	}, logger, model.ElectNode{
 		Node: model.Node{
 			Address: cfg.Node.Address,

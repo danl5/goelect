@@ -1,6 +1,9 @@
 package log
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type ConsoleLogger struct {
 }
@@ -27,5 +30,5 @@ func (c *ConsoleLogger) log(level string, msg string, keysAndValues ...interface
 		kvStr += fmt.Sprint(field) + " "
 	}
 
-	fmt.Println(level, "-", msg, kvStr)
+	fmt.Println(time.Now().String(), " ", level, "-", msg, kvStr)
 }
