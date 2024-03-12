@@ -1,0 +1,15 @@
+digraph fsm {
+    "candidate" -> "down" [ label = "down" ];
+    "candidate" -> "leader" [ label = "majority_votes" ];
+    "candidate" -> "follower" [ label = "new_leader" ];
+    "candidate" -> "follower" [ label = "new_term" ];
+    "follower" -> "down" [ label = "down" ];
+    "follower" -> "candidate" [ label = "heartbeat_timeout" ];
+    "leader" -> "down" [ label = "down" ];
+    "leader" -> "follower" [ label = "leave_leader" ];
+
+    "candidate";
+    "down";
+    "follower" [color = "red"];
+    "leader";
+}

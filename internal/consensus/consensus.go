@@ -40,6 +40,8 @@ func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (
 		eventChan:     make(chan model.NodeEvent, 1),
 		nodeStateChan: make(chan model.StateTransition, 1),
 	}
+	// initialize the node FSM
+	c.initializeFsm()
 	return c, nil
 }
 
@@ -93,8 +95,6 @@ func (c *Consensus) Run() (<-chan model.StateTransition, error) {
 		}
 		c.rpcClients.put(nodeCfg.Address, clt)
 	}
-	// initialize the node FSM
-	c.initializeFsm()
 	// run the event handler
 	c.runEventHandler()
 
@@ -133,6 +133,10 @@ func (c *Consensus) HeartBeat(args *model.HeartBeatRequest, reply *model.HeartBe
 
 	model.HBResponse(reply, true, common.HeartbeatOk.String())
 	return nil
+}
+
+func (c *Consensus) Visualize() string {
+	return fsm.Visualize(c.fsm)
 }
 
 // RequestVote handle vote request from peer node
