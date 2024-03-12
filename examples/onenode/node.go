@@ -12,10 +12,14 @@ import (
 )
 
 var (
+	// nodeAddress stores the address of the self node
 	nodeAddress = flag.String("nodeaddr", "127.0.0.1:9981", "self node address")
-	peers       = flag.String("peers", "127.0.0.1:9981", "peers node address separated by comma")
+
+	// peers stores the addresses of the peers nodes separated by a comma
+	peers = flag.String("peers", "127.0.0.1:9981", "peers node address separated by comma")
 )
 
+// Callback functions for state transitions
 func enterLeader(ctx context.Context, st model.StateTransition) error {
 	fmt.Println("enter leader,", st.State, st.SrcState)
 	return nil
@@ -60,9 +64,9 @@ func main() {
 	}
 
 	e, err := goelect.NewElect(&goelect.ElectConfig{
-		HeartBeatInterval: 2,
-		ConnectTimeout:    10,
-		Peers:             peerNodes,
+		ConnectTimeout: 10,
+		Peers:          peerNodes,
+		// state transition callbacks
 		CallBacks: &goelect.StateCallBacks{
 			EnterLeader:    enterLeader,
 			LeaveLeader:    leaveLeader,
@@ -71,6 +75,7 @@ func main() {
 			EnterCandidate: enterCandidate,
 			LeaveCandidate: leaveCandidate,
 		},
+		// self node
 		Node: goelect.Node{
 			Address: *nodeAddress,
 			ID:      *nodeAddress,
@@ -80,6 +85,7 @@ func main() {
 		panic(err)
 	}
 
+	// run the elect
 	err = e.Run()
 	if err != nil {
 		panic(err)

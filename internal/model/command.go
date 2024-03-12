@@ -1,24 +1,15 @@
 package model
 
-type CommandCode uint
-
-const (
-	CommandHeartBeat   CommandCode = iota
-	CommandRequestVote CommandCode = iota
-)
-
-const (
-	MethodHeartBeat = ``
-)
-
+// HeartBeatRequest is the heartbeat request
 type HeartBeatRequest struct {
-	Node string
-	Term uint64
+	NodeId string `json:"node_id"`
+	Term   uint64 `json:"term"`
 }
 
+// HeartBeatResponse is the heartbeat response
 type HeartBeatResponse struct {
-	Ok      bool
-	Message string
+	Ok      bool   `json:"ok,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 func HBResponse(resp *HeartBeatResponse, ok bool, msg string) {
@@ -26,16 +17,18 @@ func HBResponse(resp *HeartBeatResponse, ok bool, msg string) {
 	resp.Message = msg
 }
 
+// RequestVoteRequest is the vote request
 type RequestVoteRequest struct {
-	NodeId string
-	Term   uint64
-	Node   string
+	NodeId   string `json:"node_id"`
+	Term     uint64 `json:"term"`
+	NodeAddr string `json:"node_addr"`
 }
 
+// RequestVoteResponse is the vote response
 type RequestVoteResponse struct {
-	Node    Node
-	Vote    bool
-	Message string
+	Node    Node   `json:"node"`
+	Vote    bool   `json:"vote"`
+	Message string `json:"message,omitempty"`
 }
 
 func VoteResponse(resp *RequestVoteResponse, node Node, vote bool, msg string) {

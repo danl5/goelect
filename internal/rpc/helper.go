@@ -12,24 +12,24 @@ import (
 )
 
 const (
-	poolInitCap     = 0
-	poolMaxIdle     = 5
+	// initial capacity of the pool
+	poolInitCap = 0
+	// maximum number of idle connections in the pool
+	poolMaxIdle = 5
+	// maximum time a connection can be idle before being closed
 	poolMaxIdleTime = 15
-	poolMaxCap      = 20
+	// maximum number of connections in the pool
+	poolMaxCap = 20
 )
 
-const (
-	connectRetryInterval    = 1
-	connectMaxRetryInterval = 10
-)
-
+// NewRpcClient create a new rpc client
 func NewRpcClient(addr string, logger log.Logger, ping func(client *rpc.Client) error) (*Client, error) {
 	poolConfig := &pool.Config{
 		InitialCap:  poolInitCap,
 		MaxIdle:     poolMaxIdle,
 		MaxCap:      poolMaxCap,
 		IdleTimeout: poolMaxIdleTime * time.Second,
-		Factory:     func() (interface{}, error) { return rpcClient("tcp", addr, logger) },
+		Factory:     func() (interface{}, error) { return jsonrpc.Dial("tcp", addr) },
 		Close:       func(v interface{}) error { return v.(*rpc.Client).Close() },
 		Ping:        func(i interface{}) error { return ping(i.(*rpc.Client)) },
 	}
@@ -41,19 +41,13 @@ func NewRpcClient(addr string, logger log.Logger, ping func(client *rpc.Client) 
 	return &Client{connPool: p, logger: logger}, nil
 }
 
-func rpcClient(network string, addr string, logger log.Logger) (*rpc.Client, error) {
-	clt, err := jsonrpc.Dial(network, addr)
-	if err != nil {
-		return nil, err
-	}
-	return clt, nil
-}
-
+// Client represents an rpc client
 type Client struct {
 	connPool pool.Pool
 	logger   log.Logger
 }
 
+// Call the remote method
 func (c *Client) Call(method string, args any, reply any) error {
 	conn, err := c.connPool.Get()
 	if err != nil {
@@ -71,6 +65,7 @@ func (c *Client) Call(method string, args any, reply any) error {
 	return nil
 }
 
+// NewRpcServer create a rpc server instance
 func NewRpcServer(logger log.Logger) (*Server, error) {
 	return &Server{
 		logger: logger,
@@ -81,6 +76,7 @@ type Server struct {
 	logger log.Logger
 }
 
+// Start registers the handler and starts the server
 func (s *Server) Start(addr string, handler any) error {
 	server := rpc.NewServer()
 	// register handler
