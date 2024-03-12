@@ -1,10 +1,14 @@
 package model
 
+// TransitionType represents the type of state transition of the node
 type TransitionType int
 
 const (
+	// TransitionTypeEnter enter a state
 	TransitionTypeEnter TransitionType = iota
+	// TransitionTypeLeave leave a state
 	TransitionTypeLeave
+	// TransitionTypeAfter after a state
 	TransitionTypeAfter
 )
 

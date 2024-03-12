@@ -11,6 +11,7 @@ import (
 	"github.com/danli001/goelect/internal/rpc"
 )
 
+// NewElect creates a new Elect instance
 func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 	var peers []config.NodeConfig
 	for _, n := range cfg.Peers {
@@ -22,6 +23,7 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 		})
 	}
 
+	// new consensus instance
 	c, err := consensus.NewConsensus(&config.Config{
 		ConnectTimeout: cfg.ConnectTimeout,
 		Peers:          peers,
@@ -42,39 +44,52 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 		callBackTimeout: cfg.CallBackTimeout,
 		consensus:       c,
 		callBacks:       cfg.CallBacks,
-		errChan:         make(chan error, 6),
+		errChan:         make(chan error, 10),
 	}, nil
 }
 
+// Elect contains information about an election
 type Elect struct {
-	cfg    *ElectConfig
-	logger log.Logger
-
-	callBacks       *StateCallBacks
+	// callBacks stores the callbacks to be triggered when the state changes
+	callBacks *StateCallBacks
+	// callBackTimeout is the timeout for the callbacks
 	callBackTimeout int
-	consensus       *consensus.Consensus
-	errChan         chan error
+	// consensus is the consensus algorithm used for the election
+	consensus *consensus.Consensus
+	// errChan is a channel for errors
+	errChan chan error
+
+	// cfg is the configuration for the election
+	cfg *ElectConfig
+	// logger is used for logging
+	logger log.Logger
 }
 
+// Run is the main function of the Elect struct
 func (e *Elect) Run() error {
+	// start the RPC server
 	err := e.startServer()
 	if err != nil {
 		e.logger.Error("elect, failed to start rpc server", "error", err.Error())
 		return err
 	}
 
+	// run the consensus algorithm
 	stateChan, err := e.consensus.Run()
 	if err != nil {
 		e.logger.Error("elect, failed to run elect", "error", err.Error())
 		return err
 	}
+	// handle state transitions in a separate goroutine
 	go e.handleStateTransition(stateChan)
 
 	e.logger.Info("elect, elect started")
 	return nil
 }
 
+// Errors returns a receive-only channel of type error from the Elect struct
 func (e *Elect) Errors() <-chan error {
+	// return the error channel from the Elect struct
 	return e.errChan
 }
 
@@ -113,7 +128,6 @@ func (e *Elect) handleStateTransition(stateChan <-chan model.StateTransition) {
 			}
 
 			e.logger.Debug("elect, elect state transition", "type", st.Type.String(), "state", st.State, "src", st.SrcState)
-			//
 			var err error
 			switch st.Type {
 			case model.TransitionTypeLeave:
@@ -159,29 +173,46 @@ func (e *Elect) execStateHandler(sh StateHandler, st model.StateTransition) erro
 	return nil
 }
 
+// ElectConfig is a struct that represents the configuration for an election.
 type ElectConfig struct {
-	HeartBeatInterval uint
-	ConnectTimeout    uint
-	Peers             []Node
-	Node              Node
-	CallBacks         *StateCallBacks
-	CallBackTimeout   int
+	// Timeout for connecting to peers
+	ConnectTimeout uint
+	// List of peers in the network
+	Peers []Node
+	// Node information
+	Node Node
+	// State callbacks
+	CallBacks *StateCallBacks
+	// Timeout for callbacks
+	CallBackTimeout int
 }
 
+// Node is a struct that represents an elect node
 type Node struct {
-	ID      string
+	// ID of the node
+	ID string
+	// Address of the node
 	Address string
-	NoVote  bool
-	Tags    map[string]string
+	// NoVote indicates whether the node is able to vote
+	NoVote bool
+	// Tags associated with the node
+	Tags map[string]string
 }
 
 type StateHandler func(ctx context.Context, st model.StateTransition) error
 
+// StateCallBacks is a struct to hold state callbacks
 type StateCallBacks struct {
-	EnterLeader    StateHandler
-	LeaveLeader    StateHandler
-	EnterFollower  StateHandler
-	LeaveFollower  StateHandler
+	// EnterLeader is a callback function to be called when entering the leader state
+	EnterLeader StateHandler
+	// LeaveLeader is a callback function to be called when leaving the leader state
+	LeaveLeader StateHandler
+	// EnterFollower is a callback function to be called when entering the follower state
+	EnterFollower StateHandler
+	// LeaveFollower is a callback function to be called when leaving the follower state
+	LeaveFollower StateHandler
+	// EnterCandidate is a callback function to be called when entering the candidate state
 	EnterCandidate StateHandler
+	// LeaveCandidate is a callback function to be called when leaving the candidate state
 	LeaveCandidate StateHandler
 }

@@ -8,16 +8,21 @@ import (
 type NodeState string
 
 const (
-	NodeStateLeader    NodeState = "leader"
-	NodeStateFollower  NodeState = "follower"
+	// NodeStateLeader leader state
+	NodeStateLeader NodeState = "leader"
+	// NodeStateFollower follower state
+	NodeStateFollower NodeState = "follower"
+	// NodeStateCandidate candidate state
 	NodeStateCandidate NodeState = "candidate"
-	NodeStateDown      NodeState = "down"
+	// NodeStateDown down state
+	NodeStateDown NodeState = "down"
 )
 
 func (n NodeState) String() string {
 	return string(n)
 }
 
+// Node represents a node instance
 type Node struct {
 	ID      string
 	Address string
@@ -34,6 +39,7 @@ func (n *Node) Validate() error {
 	return nil
 }
 
+// ElectNode represents a node instance with elect meta
 type ElectNode struct {
 	Node
 
