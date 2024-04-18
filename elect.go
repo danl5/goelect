@@ -66,6 +66,7 @@ type Elect struct {
 }
 
 // Run is the main function of the Elect struct
+// It starts the RPC server, runs the consensus algorithm.
 func (e *Elect) Run() error {
 	// start the RPC server
 	err := e.startServer()
@@ -91,6 +92,11 @@ func (e *Elect) Run() error {
 func (e *Elect) Errors() <-chan error {
 	// return the error channel from the Elect struct
 	return e.errChan
+}
+
+// CurrentState return current node state
+func (e *Elect) CurrentState() string {
+	return e.consensus.CurrentState().String()
 }
 
 func (e *Elect) startServer() error {

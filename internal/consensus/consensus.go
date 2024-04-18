@@ -65,13 +65,13 @@ type Consensus struct {
 	eventChan chan model.NodeEvent
 	// nodeStateChan is used to transmit node state
 	nodeStateChan chan model.StateTransition
-	// leaderChan is used to send leader envent
+	// leaderChan is used to send leader event
 	leaderChan chan struct{}
-	// followerChan is used to send follower envent
+	// followerChan is used to send follower event
 	followerChan chan struct{}
-	// candidateChan is used to send candidate envent
+	// candidateChan is used to send candidate event
 	candidateChan chan struct{}
-	// shutdownChan is used to send shutdown envent
+	// shutdownChan is used to send shutdown event
 	shutdownChan chan struct{}
 }
 
@@ -184,6 +184,11 @@ func (c *Consensus) RequestVote(args *model.RequestVoteRequest, reply *model.Req
 func (c *Consensus) Ping(args struct{}, reply *string) error {
 	*reply = "pong"
 	return nil
+}
+
+// CurrentState return current node state
+func (c *Consensus) CurrentState() model.NodeState {
+	return c.node.State
 }
 
 func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
@@ -436,7 +441,7 @@ func (c *Consensus) sendHeartBeat(errorCount *int) {
 				return fmt.Errorf("heartbeat, peer %s response not ok, message %s", nodeAddr, resp.Message)
 			}
 
-			c.logger.Info("send heartbeat to peer", "peer", nodeAddr)
+			c.logger.Debug("send heartbeat to peer", "peer", nodeAddr)
 			return nil
 		})
 	}
