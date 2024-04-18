@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/danli001/goelect"
 	"github.com/danli001/goelect/internal/model"
@@ -50,9 +51,7 @@ func leaveCandidate(ctx context.Context, st model.StateTransition) error {
 	return nil
 }
 
-func main() {
-	flag.Parse()
-
+func newElect() (*goelect.Elect, error) {
 	pAddrs := strings.Split(*peers, ",")
 	if len(pAddrs) == 0 {
 		panic("peers is empty")
@@ -82,14 +81,34 @@ func main() {
 		},
 	}, slog.Default())
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	// run the elect
-	err = e.Run()
+	return e, nil
+}
+
+func main() {
+	flag.Parse()
+
+	e, err := newElect()
 	if err != nil {
 		panic(err)
 	}
 
-	<-make(chan struct{})
+	// run the elect
+	go func() {
+		err = e.Run()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	tk := time.NewTicker(5 * time.Second)
+	defer tk.Stop()
+	for {
+		select {
+		case <-tk.C:
+			fmt.Println("current state:", e.CurrentState())
+		}
+	}
 }
