@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/danli001/goelect/internal/config"
-	"github.com/danli001/goelect/internal/consensus"
-	"github.com/danli001/goelect/internal/log"
-	"github.com/danli001/goelect/internal/model"
-	"github.com/danli001/goelect/internal/rpc"
+	"github.com/danl5/goelect/internal/config"
+	"github.com/danl5/goelect/internal/consensus"
+	"github.com/danl5/goelect/internal/log"
+	"github.com/danl5/goelect/internal/model"
+	"github.com/danl5/goelect/internal/rpc"
 )
 
 const (

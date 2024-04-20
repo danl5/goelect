@@ -8,7 +8,7 @@ import (
 
 	"github.com/silenceper/pool"
 
-	"github.com/danli001/goelect/internal/log"
+	"github.com/danl5/goelect/internal/log"
 )
 
 const (

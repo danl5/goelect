@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/danli001/goelect"
-	"github.com/danli001/goelect/internal/model"
+	"github.com/danl5/goelect"
+	"github.com/danl5/goelect/internal/model"
 )
 
 var (
