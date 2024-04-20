@@ -23,15 +23,26 @@ const (
 )
 
 // NewRpcClient create a new rpc client
-func NewRpcClient(addr string, logger log.Logger, ping func(client *rpc.Client) error) (*Client, error) {
+func NewRpcClient(
+	addr string,
+	timeout time.Duration,
+	logger log.Logger,
+	ping func(client *rpc.Client) error) (*Client, error) {
+
 	poolConfig := &pool.Config{
 		InitialCap:  poolInitCap,
 		MaxIdle:     poolMaxIdle,
 		MaxCap:      poolMaxCap,
 		IdleTimeout: poolMaxIdleTime * time.Second,
-		Factory:     func() (interface{}, error) { return jsonrpc.Dial("tcp", addr) },
-		Close:       func(v interface{}) error { return v.(*rpc.Client).Close() },
-		Ping:        func(i interface{}) error { return ping(i.(*rpc.Client)) },
+		Factory: func() (interface{}, error) {
+			conn, err := net.DialTimeout("tcp", addr, timeout)
+			if err != nil {
+				return nil, err
+			}
+			return jsonrpc.NewClient(conn), nil
+		},
+		Close: func(v interface{}) error { return v.(*rpc.Client).Close() },
+		Ping:  func(i interface{}) error { return ping(i.(*rpc.Client)) },
 	}
 	p, err := pool.NewChannelPool(poolConfig)
 	if err != nil {
@@ -41,7 +52,7 @@ func NewRpcClient(addr string, logger log.Logger, ping func(client *rpc.Client) 
 	return &Client{connPool: p, logger: logger}, nil
 }
 
-// Client represents an rpc client
+// Client represents a rpc client
 type Client struct {
 	connPool pool.Pool
 	logger   log.Logger

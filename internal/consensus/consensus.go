@@ -18,14 +18,6 @@ import (
 	"github.com/danli001/goelect/internal/rpc"
 )
 
-const (
-	// election timeout
-	electTimeout = 200 * time.Millisecond
-
-	// heartbeat interval
-	heartBeatInterval = 150 * time.Millisecond
-)
-
 func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (*Consensus, error) {
 	c := &Consensus{
 		cfg:           cfg,
@@ -85,7 +77,7 @@ func (c *Consensus) Run() (<-chan model.StateTransition, error) {
 			continue
 		}
 		// create a new RPC client for every peer
-		clt, err := rpc.NewRpcClient(nodeCfg.Address, c.logger, func(client *nrpc.Client) error {
+		clt, err := rpc.NewRpcClient(nodeCfg.Address, c.cfg.ConnectTimeout, c.logger, func(client *nrpc.Client) error {
 			var reply string
 			return client.Call("Consensus.Ping", nil, &reply)
 		})
@@ -206,7 +198,7 @@ func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
 }
 
 func (c *Consensus) runLeader() error {
-	tk := time.NewTicker(heartBeatInterval)
+	tk := time.NewTicker(c.cfg.HeartBeatInterval)
 	defer tk.Stop()
 
 	for {
@@ -249,7 +241,7 @@ func (c *Consensus) enterFollower(ctx context.Context, ev *fsm.Event) {
 
 func (c *Consensus) runFollower() error {
 	// set the heartbeat timeout to twice the heartbeat interval
-	heartbeatTimeout := heartBeatInterval * 2
+	heartbeatTimeout := c.cfg.HeartBeatInterval * 2
 	ts := time.NewTimer(heartbeatTimeout)
 	defer ts.Stop()
 	for {
@@ -311,11 +303,11 @@ func (c *Consensus) runCandidate() error {
 }
 
 func (c *Consensus) tryToBecomeLeader() error {
-	ts := time.NewTicker(electTimeout)
+	ts := time.NewTicker(c.cfg.ElectTimeout)
 	defer ts.Stop()
 
 	electDelay := func() {
-		delayDuration := time.Duration(rand.Int63n(int64(electTimeout)))
+		delayDuration := time.Duration(rand.Int63n(int64(c.cfg.ElectTimeout)))
 		time.Sleep(delayDuration)
 	}
 	for {

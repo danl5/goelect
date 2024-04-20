@@ -63,8 +63,10 @@ func newElect() (*goelect.Elect, error) {
 	}
 
 	e, err := goelect.NewElect(&goelect.ElectConfig{
-		ConnectTimeout: 10,
-		Peers:          peerNodes,
+		ElectTimeout:      200,
+		HeartBeatInterval: 150,
+		ConnectTimeout:    10,
+		Peers:             peerNodes,
 		// state transition callbacks
 		CallBacks: &goelect.StateCallBacks{
 			EnterLeader:    enterLeader,
