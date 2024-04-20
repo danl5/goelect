@@ -1,22 +1,22 @@
 package common
 
-// VoteMessage is the message used to indicate the reason in the response to the voting request
-type VoteMessage string
+// VoteResponseMessage is the message used to indicate the reason in the response to the voting request
+type VoteResponseMessage string
 
 const (
 	// VoteOk represents a vote in agreement
-	VoteOk VoteMessage = `ok`
+	VoteOk VoteResponseMessage = `ok`
 	// VoteTermExpired represents the term has expired
-	VoteTermExpired VoteMessage = `term has expired`
+	VoteTermExpired VoteResponseMessage = `term has expired`
 	// VoteLeaderExist represents that a leader already exists
-	VoteLeaderExist VoteMessage = `leader exist`
+	VoteLeaderExist VoteResponseMessage = `leader exist`
 	// VoteHaveVoted represents that a vote has already been cast in this term
-	VoteHaveVoted VoteMessage = `have voted`
+	VoteHaveVoted VoteResponseMessage = `have voted`
 	// VoteNoVoteNode represents a node with a non-voting role
-	VoteNoVoteNode VoteMessage = `no vote node`
+	VoteNoVoteNode VoteResponseMessage = `no vote node`
 )
 
-func (v VoteMessage) String() string {
+func (v VoteResponseMessage) String() string {
 	return string(v)
 }
 

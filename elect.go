@@ -11,6 +11,17 @@ import (
 	"github.com/danli001/goelect/internal/rpc"
 )
 
+const (
+	// election timeout
+	defaultElectTimeout = 200
+
+	// heartbeat interval
+	defaultHeartBeatInterval = 150
+
+	// connect timeout
+	defaultConnectTimeout = 5
+)
+
 // NewElect creates a new Elect instance
 func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 	var peers []config.NodeConfig
@@ -23,10 +34,25 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 		})
 	}
 
+	electTimeout := cfg.ElectTimeout
+	if cfg.ElectTimeout == 0 {
+		electTimeout = defaultElectTimeout
+	}
+	heartbeatInterval := cfg.HeartBeatInterval
+	if cfg.HeartBeatInterval == 0 {
+		heartbeatInterval = defaultHeartBeatInterval
+	}
+	connectTimeout := cfg.ConnectTimeout
+	if cfg.ConnectTimeout == 0 {
+		connectTimeout = defaultConnectTimeout
+	}
+
 	// new consensus instance
 	c, err := consensus.NewConsensus(&config.Config{
-		ConnectTimeout: cfg.ConnectTimeout,
-		Peers:          peers,
+		ElectTimeout:      time.Duration(electTimeout) * time.Millisecond,
+		HeartBeatInterval: time.Duration(heartbeatInterval) * time.Millisecond,
+		ConnectTimeout:    time.Duration(connectTimeout) * time.Second,
+		Peers:             peers,
 	}, logger, model.ElectNode{
 		Node: model.Node{
 			Address: cfg.Node.Address,
@@ -154,6 +180,7 @@ func (e *Elect) handleStateTransition(stateChan <-chan model.StateTransition) {
 				case model.NodeStateCandidate:
 					err = e.execStateHandler(e.callBacks.EnterCandidate, st)
 				}
+			default:
 			}
 			if err != nil {
 				e.sendError(err)
@@ -181,7 +208,11 @@ func (e *Elect) execStateHandler(sh StateHandler, st model.StateTransition) erro
 
 // ElectConfig is a struct that represents the configuration for an election.
 type ElectConfig struct {
-	// Timeout for connecting to peers
+	// Timeout for heartbeat messages, in milliseconds
+	HeartBeatInterval uint
+	// Timeout for election messages, in milliseconds
+	ElectTimeout uint
+	// Timeout for connecting to peers, in seconds
 	ConnectTimeout uint
 	// List of peers in the network
 	Peers []Node

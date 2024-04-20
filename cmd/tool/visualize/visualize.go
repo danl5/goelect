@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/danli001/goelect/internal/config"
 	"github.com/danli001/goelect/internal/consensus"
@@ -16,7 +17,7 @@ var (
 
 func main() {
 	c, _ := consensus.NewConsensus(&config.Config{
-		ConnectTimeout: 10,
+		ConnectTimeout: 10 * time.Second,
 		Peers:          []config.NodeConfig{},
 	}, nil, model.ElectNode{})
 	visualStr := c.Visualize()

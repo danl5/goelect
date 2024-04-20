@@ -1,9 +1,17 @@
 package config
 
+import (
+	"time"
+)
+
 // Config represents the elect config
 type Config struct {
+	// ElectTimeout is timeout duration for leader election
+	ElectTimeout time.Duration `json:"elect_timeout,omitempty"`
+	// HeartBeatInterval is interval duration for heartbeat between leader and followers
+	HeartBeatInterval time.Duration `json:"heartbeat_timeout,omitempty"`
 	// ConnectTimeout represents the timeout duration for a rpc connection
-	ConnectTimeout uint `json:"connect_timeout,omitempty"`
+	ConnectTimeout time.Duration `json:"connect_timeout,omitempty"`
 	// Peers contain information about all nodes in the cluster.
 	Peers []NodeConfig `json:"peers" json:"peers,omitempty"`
 }
