@@ -336,7 +336,6 @@ func (c *Consensus) tryToBecomeLeader() error {
 				c.sendEvent(model.EventMajorityVotes)
 				return nil
 			}
-
 			select {
 			case node, ok := <-voteChan:
 				if !ok {
