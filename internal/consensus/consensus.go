@@ -19,6 +19,10 @@ import (
 )
 
 func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (*Consensus, error) {
+	if err := node.Validate(); err != nil {
+		return nil, err
+	}
+
 	c := &Consensus{
 		cfg:           cfg,
 		logger:        logger,
