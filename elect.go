@@ -216,11 +216,11 @@ type ElectConfig struct {
 	ConnectTimeout uint
 	// List of peers in the network
 	Peers []Node
-	// Node information
+	// Node represents the information of this node
 	Node Node
 	// State callbacks
 	CallBacks *StateCallBacks
-	// Timeout for callbacks
+	// Timeout for callbacks, in seconds
 	CallBackTimeout int
 }
 
