@@ -2,12 +2,13 @@
     <a><img alt="goelect" src="/docs/goelect-logo.svg"></a>
 </h1>
 
-Goelect is an open-source Go (Golang) library for leader election. It is heavily influenced by the election component of the Raft implementation. For more details, you can refer to[Raft Wiki](https://en.wikipedia.org/wiki/Raft_(algorithm)).
+Goelect is an open-source Go (Golang) library for leader election. It is heavily influenced by the election component of the Raft implementation. For more details, you can refer to [Raft Wiki](https://en.wikipedia.org/wiki/Raft_(algorithm)).
 
 ## Features
-* No third-party dependencies; it does not require third-party services such as ZooKeeper or Etcd.
-* Supports ***Novote*** role which does not participate in the election.
-
+* **Independent Operation**: No third-party services are required. You don't need to set up or rely on external systems like ZooKeeper or etcd.
+* **Simplified Integration**: Easy to integrate into your existing Golang projects with minimal configuration.
+* **Supports Novote role**：The no-vote node does not participate in the election.
+* **Highly Available**: Built to be fault-tolerant, suitable for systems that require high availability.
 
 ## How to use
 ### Config
