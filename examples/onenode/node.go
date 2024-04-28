@@ -110,7 +110,11 @@ func main() {
 	for {
 		select {
 		case <-tk.C:
-			fmt.Println("current state:", e.CurrentState())
+			cs, _ := e.ClusterState()
+			fmt.Println("Node\tState\t")
+			for addr, n := range cs.Nodes {
+				fmt.Println(addr, n.State.String())
+			}
 		}
 	}
 }

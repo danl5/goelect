@@ -36,3 +36,8 @@ func VoteResponse(resp *RequestVoteResponse, node Node, vote bool, msg string) {
 	resp.Vote = vote
 	resp.Message = msg
 }
+
+// ClusterState represents the state of a cluster, including the nodes that make up the cluster.
+type ClusterState struct {
+	Nodes map[string]ElectNode `json:"nodes"`
+}

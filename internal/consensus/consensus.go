@@ -182,9 +182,48 @@ func (c *Consensus) Ping(args struct{}, reply *string) error {
 	return nil
 }
 
-// CurrentState return current node state
-func (c *Consensus) CurrentState() model.NodeState {
-	return c.node.State
+// State return current node state
+func (c *Consensus) State(args struct{}, reply *model.ElectNode) error {
+	*reply = c.CurrentState()
+	return nil
+}
+
+func (c *Consensus) ClusterState() (*model.ClusterState, error) {
+	g := errgroup.Group{}
+	clusterState := &model.ClusterState{
+		Nodes: map[string]model.ElectNode{c.node.Address: c.node},
+	}
+	for rpcClient := range c.rpcClients.iterate() {
+		nodeAddr, clt := rpcClient.address, rpcClient.client
+		if nodeAddr == c.node.Address {
+			// skip self
+			continue
+		}
+
+		g.Go(func() error {
+			resp := model.ElectNode{}
+			// send state request
+			err := clt.Call("Consensus.State", nil, &resp)
+			if err != nil {
+				c.logger.Error("failed to get node state", "peer", nodeAddr)
+				return fmt.Errorf("failed to get node state, peer %s, err: %s", nodeAddr, err.Error())
+			}
+
+			clusterState.Nodes[resp.Address] = resp
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		c.logger.Error("get cluster state error", "error", err.Error())
+		return nil, err
+	}
+
+	return clusterState, nil
+}
+
+func (c *Consensus) CurrentState() model.ElectNode {
+	return c.node
 }
 
 func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
