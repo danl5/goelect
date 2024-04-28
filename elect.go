@@ -120,9 +120,14 @@ func (e *Elect) Errors() <-chan error {
 	return e.errChan
 }
 
-// CurrentState return current node state
+// CurrentState returns current node state
 func (e *Elect) CurrentState() string {
-	return e.consensus.CurrentState().String()
+	return e.consensus.CurrentState().State.String()
+}
+
+// ClusterState returns current cluster state
+func (e *Elect) ClusterState() (*model.ClusterState, error) {
+	return e.consensus.ClusterState()
 }
 
 func (e *Elect) startServer() error {
