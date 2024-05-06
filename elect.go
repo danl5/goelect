@@ -48,7 +48,7 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 	}
 
 	// new consensus instance
-	c, err := consensus.NewConsensus(&config.Config{
+	crh, err := consensus.NewConsensusRpcHandler(&config.Config{
 		ElectTimeout:      time.Duration(electTimeout) * time.Millisecond,
 		HeartBeatInterval: time.Duration(heartbeatInterval) * time.Millisecond,
 		ConnectTimeout:    time.Duration(connectTimeout) * time.Second,
@@ -68,7 +68,7 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 		cfg:             cfg,
 		logger:          logger,
 		callBackTimeout: cfg.CallBackTimeout,
-		consensus:       c,
+		consensus:       crh,
 		callBacks:       cfg.CallBacks,
 		errChan:         make(chan error, 10),
 	}, nil
@@ -80,8 +80,8 @@ type Elect struct {
 	callBacks *StateCallBacks
 	// callBackTimeout is the timeout for the callbacks
 	callBackTimeout int
-	// consensus is the consensus algorithm used for the election
-	consensus *consensus.Consensus
+	// consensus is a pointer to an RpcHandler which encapsulates the implementation of the consensus algorithm.
+	consensus *consensus.RpcHandler
 	// errChan is a channel for errors
 	errChan chan error
 
