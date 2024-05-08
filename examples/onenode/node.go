@@ -115,6 +115,12 @@ func main() {
 			for addr, n := range cs.Nodes {
 				fmt.Println(addr, n.State.String())
 			}
+
+			leaderNode, _ := e.Leader()
+			fmt.Println("Leader:", leaderNode)
+
+			isLeader := e.IsLeader()
+			fmt.Println("Leader:", isLeader)
 		}
 	}
 }

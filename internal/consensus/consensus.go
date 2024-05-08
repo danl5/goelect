@@ -100,15 +100,37 @@ func (c *Consensus) Run() (<-chan model.StateTransition, error) {
 	return c.nodeStateChan, nil
 }
 
-func (c *Consensus) Visualize() string {
-	return fsm.Visualize(c.fsm)
+// IsLeader determines whether the current node is the leader node.
+func (c *Consensus) IsLeader() bool {
+	// uses the state machine to check if the current node's state is that of a leader
+	return c.fsm.Is(model.NodeStateLeader.String())
 }
 
+// Leader retrieves the current leader node from the cluster.
+// It returns an error if no leader is found or there's an issue fetching the cluster state.
+func (c *Consensus) Leader() (*model.Node, error) {
+	clusterState, err := c.ClusterState()
+	if err != nil {
+		c.logger.Error("failed to get cluster state", "error", err.Error())
+		return nil, err
+	}
+
+	for _, node := range clusterState.Nodes {
+		if node.State == model.NodeStateLeader {
+			return &node.Node, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no leader found")
+}
+
+// ClusterState retrieves the current state of the cluster including all nodes.
 func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 	g := errgroup.Group{}
 	clusterState := &model.ClusterState{
-		Nodes: map[string]model.ElectNode{c.node.Address: c.node},
+		Nodes: map[string]*model.ElectNode{c.node.Address: &c.node},
 	}
+	stateMap := sync.Map{}
 	for rpcClient := range c.rpcClients.iterate() {
 		nodeAddr, clt := rpcClient.address, rpcClient.client
 		if nodeAddr == c.node.Address {
@@ -125,21 +147,32 @@ func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 				return fmt.Errorf("failed to get node state, peer %s, err: %s", nodeAddr, err.Error())
 			}
 
-			clusterState.Nodes[resp.Address] = resp
+			stateMap.Store(resp.Address, &resp)
 			return nil
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	err := g.Wait()
+	if err != nil {
 		c.logger.Error("get cluster state error", "error", err.Error())
-		return nil, err
 	}
 
-	return clusterState, nil
+	stateMap.Range(func(key, value any) bool {
+		clusterState.Nodes[key.(string)] = value.(*model.ElectNode)
+		return true
+	})
+
+	return clusterState, err
 }
 
+// CurrentState returns the current election node state.
 func (c *Consensus) CurrentState() model.ElectNode {
 	return c.node
+}
+
+// Visualize returns a visualization of the current consensus state machine in Graphviz format.
+func (c *Consensus) Visualize() string {
+	return fsm.Visualize(c.fsm)
 }
 
 func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
@@ -559,16 +592,16 @@ type rpcClients struct {
 	m       sync.RWMutex
 }
 
-func (r *rpcClients) get(addr string) *rpc.Client {
-	r.m.RLock()
-	defer r.m.RUnlock()
-
-	if clt, ok := r.clients[addr]; ok {
-		return clt
-	}
-
-	return nil
-}
+//func (r *rpcClients) get(addr string) *rpc.Client {
+//	r.m.RLock()
+//	defer r.m.RUnlock()
+//
+//	if clt, ok := r.clients[addr]; ok {
+//		return clt
+//	}
+//
+//	return nil
+//}
 
 func (r *rpcClients) put(addr string, clt *rpc.Client) {
 	r.m.Lock()

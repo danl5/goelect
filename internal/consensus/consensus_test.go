@@ -73,10 +73,12 @@ func TestConsensus_HeartBeat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Consensus{
-				termCache: tt.fields.termCache,
-				logger:    tt.fields.logger,
-				eventChan: tt.fields.eventChan,
+			c := &RpcHandler{
+				Consensus: &Consensus{
+					termCache: tt.fields.termCache,
+					logger:    tt.fields.logger,
+					eventChan: tt.fields.eventChan,
+				},
 			}
 			if err := c.HeartBeat(tt.args.args, tt.args.reply); (err != nil) != tt.wantErr {
 				t.Errorf("HeartBeat() error = %v, wantErr %v", err, tt.wantErr)
@@ -245,11 +247,13 @@ func TestConsensus_RequestVote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Consensus{
-				termCache: tt.fields.termCache,
-				logger:    tt.fields.logger,
-				node:      tt.fields.node,
-				eventChan: tt.fields.eventChan,
+			c := &RpcHandler{
+				Consensus: &Consensus{
+					termCache: tt.fields.termCache,
+					logger:    tt.fields.logger,
+					node:      tt.fields.node,
+					eventChan: tt.fields.eventChan,
+				},
 			}
 			if err := c.RequestVote(tt.args.args, tt.args.reply); (err != nil) != tt.wantErr {
 				t.Errorf("RequestVote() error = %v, wantErr %v", err, tt.wantErr)

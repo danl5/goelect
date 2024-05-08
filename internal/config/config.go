@@ -13,7 +13,7 @@ type Config struct {
 	// ConnectTimeout represents the timeout duration for a rpc connection
 	ConnectTimeout time.Duration `json:"connect_timeout,omitempty"`
 	// Peers contain information about all nodes in the cluster.
-	Peers []NodeConfig `json:"peers" json:"peers,omitempty"`
+	Peers []NodeConfig `json:"peers,omitempty"`
 }
 
 type NodeConfig struct {
