@@ -64,7 +64,11 @@ func (c *Client) Call(method string, args any, reply any) error {
 	if err != nil {
 		return err
 	}
-	defer c.connPool.Put(conn)
+	defer func() {
+		if err := c.connPool.Put(conn); err != nil {
+			c.logger.Error("rpc put conn error", "error", err.Error())
+		}
+	}()
 
 	client := conn.(*rpc.Client)
 	c.logger.Debug("rpc call", "method", method, "args", args)

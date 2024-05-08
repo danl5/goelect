@@ -108,7 +108,7 @@ func (e *Elect) Run() error {
 		return err
 	}
 	// handle state transitions in a separate goroutine
-	go e.handleStateTransition(stateChan)
+	go e.handleStateTransition(context.Background(), stateChan)
 
 	e.logger.Info("elect, elect started")
 	return nil
@@ -128,6 +128,21 @@ func (e *Elect) CurrentState() string {
 // ClusterState returns current cluster state
 func (e *Elect) ClusterState() (*model.ClusterState, error) {
 	return e.consensus.ClusterState()
+}
+
+// IsLeader returns true if the current node is the leader
+func (e *Elect) IsLeader() bool {
+	return e.consensus.IsLeader()
+}
+
+// Leader returns the leader node id, if no leader is found, it returns an error
+func (e *Elect) Leader() (string, error) {
+	l, err := e.consensus.Leader()
+	if err != nil || l == nil {
+		return "", err
+	}
+
+	return l.ID, nil
 }
 
 func (e *Elect) startServer() error {
@@ -155,7 +170,7 @@ func (e *Elect) sendError(err error) {
 	}
 }
 
-func (e *Elect) handleStateTransition(stateChan <-chan model.StateTransition) {
+func (e *Elect) handleStateTransition(ctx context.Context, stateChan <-chan model.StateTransition) {
 	for {
 		select {
 		case st, ok := <-stateChan:
@@ -190,6 +205,9 @@ func (e *Elect) handleStateTransition(stateChan <-chan model.StateTransition) {
 			if err != nil {
 				e.sendError(err)
 			}
+		case <-ctx.Done():
+			e.logger.Info("elect, stop state transition handler")
+			return
 		}
 	}
 }
