@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/danl5/goelect"
-	"github.com/danl5/goelect/internal/model"
+	"github.com/danl5/goelect/pkg/model"
 )
 
 var (

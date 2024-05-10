@@ -11,10 +11,10 @@ import (
 	"github.com/looplab/fsm"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/danl5/goelect/internal/config"
-	"github.com/danl5/goelect/internal/log"
-	"github.com/danl5/goelect/internal/model"
-	"github.com/danl5/goelect/internal/rpc"
+	"github.com/danl5/goelect/pkg/config"
+	"github.com/danl5/goelect/pkg/log"
+	"github.com/danl5/goelect/pkg/model"
+	"github.com/danl5/goelect/pkg/rpc"
 )
 
 func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (*Consensus, error) {

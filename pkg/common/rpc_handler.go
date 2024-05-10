@@ -1,7 +1,7 @@
 package common
 
 import (
-	"github.com/danl5/goelect/internal/model"
+	"github.com/danl5/goelect/pkg/model"
 )
 
 type RpcHandler interface {
