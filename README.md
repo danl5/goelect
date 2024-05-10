@@ -2,6 +2,8 @@
     <a><img alt="goelect" src="/docs/goelect-logo.svg"></a>
 </h1>
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/danl5/goelect)](https://goreportcard.com/report/github.com/danl5/goelect) ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/danl5/goelect?sort=semver)
+
 Goelect is an open-source Go (Golang) library for leader election. It is heavily influenced by the election component of the Raft implementation. For more details, you can refer to [Raft Wiki](https://en.wikipedia.org/wiki/Raft_(algorithm)).
 
 ## Features
