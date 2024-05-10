@@ -1,10 +1,10 @@
 package consensus
 
 import (
-	"github.com/danl5/goelect/internal/common"
-	"github.com/danl5/goelect/internal/config"
-	"github.com/danl5/goelect/internal/log"
-	"github.com/danl5/goelect/internal/model"
+	"github.com/danl5/goelect/pkg/common"
+	"github.com/danl5/goelect/pkg/config"
+	"github.com/danl5/goelect/pkg/log"
+	"github.com/danl5/goelect/pkg/model"
 )
 
 func NewConsensusRpcHandler(cfg *config.Config, logger log.Logger, node model.ElectNode) (*RpcHandler, error) {

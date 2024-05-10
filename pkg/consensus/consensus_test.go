@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/danl5/goelect/internal/common"
-	"github.com/danl5/goelect/internal/log"
-	"github.com/danl5/goelect/internal/model"
+	"github.com/danl5/goelect/pkg/common"
+	"github.com/danl5/goelect/pkg/log"
+	"github.com/danl5/goelect/pkg/model"
 )
 
 func TestConsensus_HeartBeat(t *testing.T) {

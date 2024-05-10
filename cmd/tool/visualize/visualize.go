@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/danl5/goelect/internal/config"
-	"github.com/danl5/goelect/internal/consensus"
-	"github.com/danl5/goelect/internal/model"
+	"github.com/danl5/goelect/pkg/config"
+	"github.com/danl5/goelect/pkg/consensus"
+	"github.com/danl5/goelect/pkg/model"
 )
 
 var (
