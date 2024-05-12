@@ -108,7 +108,7 @@ func (c *Consensus) IsLeader() bool {
 
 // Leader retrieves the current leader node from the cluster.
 // It returns an error if no leader is found or there's an issue fetching the cluster state.
-func (c *Consensus) Leader() (*model.Node, error) {
+func (c *Consensus) Leader() (*model.ElectNode, error) {
 	clusterState, err := c.ClusterState()
 	if err != nil {
 		c.logger.Error("failed to get cluster state", "error", err.Error())
@@ -128,7 +128,12 @@ func (c *Consensus) Leader() (*model.Node, error) {
 func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 	g := errgroup.Group{}
 	clusterState := &model.ClusterState{
-		Nodes: map[string]*model.ElectNode{c.node.Address: &c.node},
+		Nodes: map[string]*model.NodeWithState{
+			c.node.ID: {
+				Node:  c.node,
+				State: model.NodeState(c.fsm.Current()),
+			},
+		},
 	}
 	stateMap := sync.Map{}
 	for rpcClient := range c.rpcClients.iterate() {
@@ -139,7 +144,7 @@ func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 		}
 
 		g.Go(func() error {
-			resp := model.ElectNode{}
+			resp := model.NodeWithState{}
 			// send state request
 			err := clt.Call("RpcHandler.State", nil, &resp)
 			if err != nil {
@@ -147,7 +152,7 @@ func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 				return fmt.Errorf("failed to get node state, peer %s, err: %s", nodeAddr, err.Error())
 			}
 
-			stateMap.Store(resp.Address, &resp)
+			stateMap.Store(resp.Node.ID, &resp)
 			return nil
 		})
 	}
@@ -158,7 +163,7 @@ func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 	}
 
 	stateMap.Range(func(key, value any) bool {
-		clusterState.Nodes[key.(string)] = value.(*model.ElectNode)
+		clusterState.Nodes[key.(string)] = value.(*model.NodeWithState)
 		return true
 	})
 
@@ -166,8 +171,11 @@ func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 }
 
 // CurrentState returns the current election node state.
-func (c *Consensus) CurrentState() model.ElectNode {
-	return c.node
+func (c *Consensus) CurrentState() model.NodeWithState {
+	return model.NodeWithState{
+		State: model.NodeState(c.fsm.Current()),
+		Node:  c.node,
+	}
 }
 
 // Visualize returns a visualization of the current consensus state machine in Graphviz format.
@@ -175,10 +183,9 @@ func (c *Consensus) Visualize() string {
 	return fsm.Visualize(c.fsm)
 }
 
-func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) enterLeader(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("become leader")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
-	c.node.State = model.NodeStateLeader
 	c.leaderChan = make(chan struct{}, 1)
 	go func() {
 		err := c.runLeader()
@@ -211,16 +218,15 @@ func (c *Consensus) runLeader() error {
 	}
 }
 
-func (c *Consensus) leaveLeader(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) leaveLeader(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("leave leader")
 	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.leaderChan)
 }
 
-func (c *Consensus) enterFollower(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) enterFollower(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("become follower")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
-	c.node.State = model.NodeStateFollower
 	c.followerChan = make(chan struct{}, 1)
 	go func() {
 		err := c.runFollower()
@@ -259,16 +265,15 @@ func (c *Consensus) runFollower() error {
 	}
 }
 
-func (c *Consensus) leaveFollower(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) leaveFollower(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("leave follower")
 	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.followerChan)
 }
 
-func (c *Consensus) enterCandidate(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) enterCandidate(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("become candidate")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
-	c.node.State = model.NodeStateCandidate
 	c.candidateChan = make(chan struct{}, 1)
 	go func() {
 		err := c.runCandidate()
@@ -357,18 +362,18 @@ func (c *Consensus) tryToBecomeLeader() error {
 	}
 }
 
-func (c *Consensus) leaveCandidate(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) leaveCandidate(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("leave candidate")
 	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.candidateChan)
 }
 
-func (c *Consensus) enterShutdown(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) enterShutdown(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("become shutdown")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 }
 
-func (c *Consensus) leaveShutdown(ctx context.Context, ev *fsm.Event) {
+func (c *Consensus) leaveShutdown(_ context.Context, ev *fsm.Event) {
 	c.logger.Info("leave shutdown")
 	c.sendNodeStateTransition(model.NodeState(ev.Src), model.NodeState(ev.Dst), model.TransitionTypeLeave)
 	close(c.shutdownChan)

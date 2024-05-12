@@ -43,6 +43,5 @@ func (n *Node) Validate() error {
 type ElectNode struct {
 	Node
 
-	State  NodeState
 	NoVote bool
 }

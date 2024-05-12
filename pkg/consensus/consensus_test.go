@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/looplab/fsm"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/danl5/goelect/pkg/common"
@@ -94,7 +95,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 	type fields struct {
 		termCache *termCache
 		logger    log.Logger
-		node      model.ElectNode
+		fsm       *fsm.FSM
 		eventChan chan model.NodeEvent
 	}
 	type args struct {
@@ -105,6 +106,15 @@ func TestConsensus_RequestVote(t *testing.T) {
 		vote    bool
 		message string
 	}
+	leaderFsm := &fsm.FSM{}
+	leaderFsm.SetState(model.NodeStateLeader.String())
+
+	followerFsm := &fsm.FSM{}
+	followerFsm.SetState(model.NodeStateFollower.String())
+
+	candidateFsm := &fsm.FSM{}
+	candidateFsm.SetState(model.NodeStateCandidate.String())
+
 	tests := []struct {
 		name    string
 		fields  fields
@@ -120,7 +130,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				},
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
-				node:      model.ElectNode{State: model.NodeStateLeader},
+				fsm:       leaderFsm,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -142,7 +152,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				},
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
-				node:      model.ElectNode{State: model.NodeStateLeader},
+				fsm:       leaderFsm,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -164,7 +174,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				},
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
-				node:      model.ElectNode{State: model.NodeStateFollower},
+				fsm:       followerFsm,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -186,7 +196,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				},
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
-				node:      model.ElectNode{State: model.NodeStateFollower},
+				fsm:       followerFsm,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -208,7 +218,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				},
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
-				node:      model.ElectNode{State: model.NodeStateCandidate},
+				fsm:       candidateFsm,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -230,7 +240,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				},
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
-				node:      model.ElectNode{State: model.NodeStateCandidate},
+				fsm:       candidateFsm,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -251,7 +261,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				Consensus: &Consensus{
 					termCache: tt.fields.termCache,
 					logger:    tt.fields.logger,
-					node:      tt.fields.node,
+					fsm:       tt.fields.fsm,
 					eventChan: tt.fields.eventChan,
 				},
 			}

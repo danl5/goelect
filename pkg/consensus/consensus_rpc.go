@@ -39,7 +39,7 @@ func (c *RpcHandler) HeartBeat(args *model.HeartBeatRequest, reply *model.HeartB
 	// update term of this node
 	c.setTerm(args.Term)
 
-	switch c.node.State {
+	switch model.NodeState(c.fsm.Current()) {
 	case model.NodeStateLeader:
 		// leave leader state
 		c.sendEvent(model.EventLeaveLeader)
@@ -59,13 +59,13 @@ func (c *RpcHandler) HeartBeat(args *model.HeartBeatRequest, reply *model.HeartB
 // RequestVote handle vote request from peer node
 func (c *RpcHandler) RequestVote(args *model.RequestVoteRequest, reply *model.RequestVoteResponse) error {
 	c.logger.Info("receive vote request", "from", args.NodeAddr, "term", args.Term, "current term", c.term)
-	// return when novote is true
+	// return when no-vote is true
 	if c.node.NoVote {
 		model.VoteResponse(reply, c.node.Node, false, common.VoteNoVoteNode.String())
 		return nil
 	}
 
-	switch c.node.State {
+	switch model.NodeState(c.fsm.Current()) {
 	case model.NodeStateLeader:
 		if args.Term <= c.term {
 			model.VoteResponse(reply, c.node.Node, false, common.VoteLeaderExist.String())
@@ -98,13 +98,13 @@ func (c *RpcHandler) RequestVote(args *model.RequestVoteRequest, reply *model.Re
 }
 
 // Ping handles ping request from peer node
-func (c *RpcHandler) Ping(args struct{}, reply *string) error {
+func (c *RpcHandler) Ping(_ struct{}, reply *string) error {
 	*reply = "pong"
 	return nil
 }
 
 // State return current node state
-func (c *RpcHandler) State(args struct{}, reply *model.ElectNode) error {
+func (c *RpcHandler) State(_ struct{}, reply *model.NodeWithState) error {
 	*reply = c.CurrentState()
 	return nil
 }
