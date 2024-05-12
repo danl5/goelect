@@ -79,6 +79,7 @@ func TestConsensus_HeartBeat(t *testing.T) {
 					termCache: tt.fields.termCache,
 					logger:    tt.fields.logger,
 					eventChan: tt.fields.eventChan,
+					fsm:       &fsm.FSM{},
 				},
 			}
 			if err := c.HeartBeat(tt.args.args, tt.args.reply); (err != nil) != tt.wantErr {
