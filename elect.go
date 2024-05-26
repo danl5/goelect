@@ -8,7 +8,6 @@ import (
 	"github.com/danl5/goelect/pkg/consensus"
 	"github.com/danl5/goelect/pkg/log"
 	"github.com/danl5/goelect/pkg/model"
-	"github.com/danl5/goelect/pkg/rpc"
 )
 
 const (
@@ -23,7 +22,11 @@ const (
 )
 
 // NewElect creates a new Elect instance
-func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
+func NewElect(
+	trans model.Transport,
+	transConfig model.TransportConfig,
+	cfg *ElectConfig,
+	logger log.Logger) (*Elect, error) {
 	var peers []config.NodeConfig
 	for _, n := range cfg.Peers {
 		peers = append(peers, config.NodeConfig{
@@ -48,19 +51,23 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 	}
 
 	// new consensus instance
-	crh, err := consensus.NewConsensusRpcHandler(&config.Config{
-		ElectTimeout:      time.Duration(electTimeout) * time.Millisecond,
-		HeartBeatInterval: time.Duration(heartbeatInterval) * time.Millisecond,
-		ConnectTimeout:    time.Duration(connectTimeout) * time.Second,
-		Peers:             peers,
-	}, logger, model.ElectNode{
-		Node: model.Node{
-			Address: cfg.Node.Address,
-			ID:      cfg.Node.ID,
-			Tags:    cfg.Node.Tags,
+	c, err := consensus.NewConsensus(
+		model.ElectNode{
+			Node: model.Node{
+				Address: cfg.Node.Address,
+				ID:      cfg.Node.ID,
+				Tags:    cfg.Node.Tags,
+			},
+			NoVote: cfg.Node.NoVote,
 		},
-		NoVote: cfg.Node.NoVote,
-	})
+		trans,
+		transConfig,
+		&config.Config{
+			ElectTimeout:      time.Duration(electTimeout) * time.Millisecond,
+			HeartBeatInterval: time.Duration(heartbeatInterval) * time.Millisecond,
+			ConnectTimeout:    time.Duration(connectTimeout) * time.Second,
+			Peers:             peers,
+		}, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +75,7 @@ func NewElect(cfg *ElectConfig, logger log.Logger) (*Elect, error) {
 		cfg:             cfg,
 		logger:          logger,
 		callBackTimeout: cfg.CallBackTimeout,
-		consensus:       crh,
+		consensus:       c,
 		callBacks:       cfg.CallBacks,
 		errChan:         make(chan error, 10),
 	}, nil
@@ -81,7 +88,7 @@ type Elect struct {
 	// callBackTimeout is the timeout for the callbacks
 	callBackTimeout int
 	// consensus is a pointer to an RpcHandler which encapsulates the implementation of the consensus algorithm.
-	consensus *consensus.RpcHandler
+	consensus *consensus.Consensus
 	// errChan is a channel for errors
 	errChan chan error
 
@@ -94,12 +101,6 @@ type Elect struct {
 // Run is the main function of the Elect struct
 // It starts the RPC server, runs the consensus algorithm.
 func (e *Elect) Run() error {
-	// start the RPC server
-	err := e.startServer()
-	if err != nil {
-		e.logger.Error("elect, failed to start rpc server", "error", err.Error())
-		return err
-	}
 
 	// run the consensus algorithm
 	stateChan, err := e.consensus.Run()
@@ -122,7 +123,7 @@ func (e *Elect) Errors() <-chan error {
 
 // CurrentState returns current node state
 func (e *Elect) CurrentState() string {
-	return e.consensus.CurrentState().State.String()
+	return e.consensus.CurrentState().String()
 }
 
 // ClusterState returns current cluster state
@@ -143,24 +144,6 @@ func (e *Elect) Leader() (string, error) {
 	}
 
 	return l.ID, nil
-}
-
-func (e *Elect) startServer() error {
-	rpcSvr, err := rpc.NewRpcServer(e.logger)
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		err = rpcSvr.Start(e.cfg.Node.Address, e.consensus)
-		if err != nil {
-			e.logger.Error("elect, failed to start rpc server", "error", err.Error())
-			return
-		}
-	}()
-
-	e.logger.Info("start rpc server")
-	return nil
 }
 
 func (e *Elect) sendError(err error) {

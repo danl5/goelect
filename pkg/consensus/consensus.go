@@ -4,36 +4,41 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	nrpc "net/rpc"
 	"sync"
 	"time"
 
 	"github.com/looplab/fsm"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/danl5/goelect/pkg/common"
 	"github.com/danl5/goelect/pkg/config"
 	"github.com/danl5/goelect/pkg/log"
 	"github.com/danl5/goelect/pkg/model"
-	"github.com/danl5/goelect/pkg/rpc"
 )
 
-func NewConsensus(cfg *config.Config, logger log.Logger, node model.ElectNode) (*Consensus, error) {
+func NewConsensus(
+	node model.ElectNode,
+	trans model.Transport,
+	transConfig model.TransportConfig,
+	cfg *config.Config,
+	logger log.Logger) (*Consensus, error) {
 	if err := node.Validate(); err != nil {
 		return nil, err
 	}
 
 	c := &Consensus{
-		cfg:           cfg,
-		logger:        logger,
-		node:          node,
-		termCache:     &termCache{},
-		rpcClients:    &rpcClients{},
-		leaderChan:    make(chan struct{}, 1),
-		followerChan:  make(chan struct{}, 1),
-		candidateChan: make(chan struct{}, 1),
-		shutdownChan:  make(chan struct{}, 1),
-		eventChan:     make(chan model.NodeEvent, 1),
-		nodeStateChan: make(chan model.StateTransition, 1),
+		cfg:             cfg,
+		logger:          logger,
+		node:            node,
+		termCache:       &termCache{},
+		transport:       trans,
+		transportConfig: transConfig,
+		leaderChan:      make(chan struct{}, 1),
+		followerChan:    make(chan struct{}, 1),
+		candidateChan:   make(chan struct{}, 1),
+		shutdownChan:    make(chan struct{}, 1),
+		eventChan:       make(chan model.NodeEvent, 1),
+		nodeStateChan:   make(chan model.StateTransition, 1),
 	}
 	// initialize the node FSM
 	c.initializeFsm()
@@ -53,8 +58,10 @@ type Consensus struct {
 	node model.ElectNode
 	// fsm is the finite state machine of the elect node
 	fsm *fsm.FSM
-	// rpcClients is used to communicate with other nodes
-	rpcClients *rpcClients
+	// transport is the transport layer
+	transport model.Transport
+	// transportConfig is the transport configuration
+	transportConfig model.TransportConfig
 
 	// eventChan is used to transmit node event
 	eventChan chan model.NodeEvent
@@ -73,31 +80,152 @@ type Consensus struct {
 // Run starts the consensus
 // Returns a channel of state transitions and an error
 func (c *Consensus) Run() (<-chan model.StateTransition, error) {
-	// iterate through the list of peers
-	for _, nodeCfg := range c.cfg.Peers {
-		if nodeCfg.ID == c.node.ID {
-			// skip self
-			continue
-		}
-		// create a new RPC client for every peer
-		clt, err := rpc.NewRpcClient(nodeCfg.Address, c.cfg.ConnectTimeout, c.logger, func(client *nrpc.Client) error {
-			var reply string
-			return client.Call("RpcHandler.Ping", nil, &reply)
-		})
-		if err != nil {
-			c.logger.Error("can not connect to peer", "peer", nodeCfg.Address, "error", err.Error())
-			return nil, err
-		}
-		c.rpcClients.put(nodeCfg.Address, clt)
+	// initialize the transport layer
+	err := c.initializeTransport()
+	if err != nil {
+		return nil, err
 	}
+
 	// run the event handler
 	c.runEventHandler()
 
 	// enter the default follower state
 	c.enterFollower(context.Background(), &fsm.Event{Dst: model.NodeStateFollower.String()})
 
-	c.logger.Debug("start consensus")
+	c.logger.Info("consensus started")
 	return c.nodeStateChan, nil
+}
+
+func (c *Consensus) HandleRequest(request *model.Request, response *model.Response) error {
+	response.Header = c.buildHeaders()
+
+	switch request.CommandCode {
+	case model.HeartBeat:
+		c.logger.Debug("receive heartbeat request", "peer", request.Header.Node.ID)
+		hbRequest := &model.HeartBeatRequest{}
+		err := c.transport.Decode(request.Command, hbRequest)
+		if err != nil {
+			c.logger.Error("failed to decode heartbeat request", "error", err.Error())
+			response.Error = model.ErrorBadCommand
+			return model.ErrorBadCommand
+		}
+		resp := &model.HeartBeatResponse{}
+		err = c.HeartBeat(hbRequest, resp)
+		if err != nil {
+			response.Error = err
+			return err
+		}
+		response.CommandResponse = resp
+		return nil
+	case model.RequestVote:
+		c.logger.Info("receive vote request", "peer", request.Header.Node.ID)
+		voteRequest := &model.RequestVoteRequest{}
+		err := c.transport.Decode(request.Command, voteRequest)
+		if err != nil {
+			c.logger.Error("failed to decode vote request", "error", err.Error())
+			response.Error = model.ErrorBadCommand
+			return model.ErrorBadCommand
+		}
+		resp := &model.RequestVoteResponse{}
+		err = c.RequestVote(voteRequest, resp)
+		if err != nil {
+			response.Error = err
+			return err
+		}
+		response.CommandResponse = resp
+		return nil
+	case model.State:
+		c.logger.Info("receive state request", "peer", request.Header.Node.ID)
+		resp := &model.NodeWithState{}
+		err := c.State(resp)
+		if err != nil {
+			response.Error = err
+			return err
+		}
+		response.CommandResponse = resp
+		return nil
+	}
+	return nil
+}
+
+// HeartBeat handles heartbeat request from peer node
+func (c *Consensus) HeartBeat(args *model.HeartBeatRequest, reply *model.HeartBeatResponse) error {
+	c.logger.Debug("receive heartbeat", "from", args.NodeId)
+
+	if c.term > args.Term {
+		// term in the request is behind this node
+		model.HBResponse(reply, false, common.HeartbeatExpired.String())
+		return nil
+	}
+
+	// update term of this node
+	c.setTerm(args.Term)
+
+	switch model.NodeState(c.fsm.Current()) {
+	case model.NodeStateLeader:
+		// leave leader state
+		c.sendEvent(model.EventLeaveLeader)
+	case model.NodeStateFollower:
+		// send heartbeat to handler
+		c.followerChan <- struct{}{}
+	case model.NodeStateCandidate:
+		// receive a new leader
+		c.sendEvent(model.EventNewLeader)
+	case model.NodeStateDown:
+	}
+
+	model.HBResponse(reply, true, common.HeartbeatOk.String())
+	return nil
+}
+
+// RequestVote handle vote request from peer node
+func (c *Consensus) RequestVote(args *model.RequestVoteRequest, reply *model.RequestVoteResponse) error {
+	c.logger.Info("receive vote request", "from", args.NodeAddr, "term", args.Term, "current term", c.term)
+	// return when no-vote is true
+	if c.node.NoVote {
+		model.VoteResponse(reply, c.node.Node, false, common.VoteNoVoteNode.String())
+		return nil
+	}
+
+	switch model.NodeState(c.fsm.Current()) {
+	case model.NodeStateLeader:
+		if args.Term <= c.term {
+			model.VoteResponse(reply, c.node.Node, false, common.VoteLeaderExist.String())
+			return nil
+		}
+		// term in the request is newer, leaves leader state
+		c.sendEvent(model.EventLeaveLeader)
+	case model.NodeStateFollower:
+		if args.Term < c.term {
+			model.VoteResponse(reply, c.node.Node, false, common.VoteTermExpired.String())
+			return nil
+		}
+	case model.NodeStateCandidate:
+		if args.Term <= c.term {
+			model.VoteResponse(reply, c.node.Node, false, common.VoteHaveVoted.String())
+			return nil
+		}
+		// term in the request is newer, vote and switch to follower state
+		c.sendEvent(model.EventNewTerm)
+	case model.NodeStateDown:
+	}
+
+	// update term cache
+	c.setTerm(args.Term)
+	c.vote(args.Term, args.NodeId)
+
+	c.logger.Info("vote for", "node", args.NodeId, "term", args.Term)
+	model.VoteResponse(reply, c.node.Node, true, common.VoteOk.String())
+	return nil
+}
+
+// State return current node state
+func (c *Consensus) State(reply *model.NodeWithState) error {
+	*reply = model.NodeWithState{
+		State: model.NodeState(c.fsm.Current()),
+		Node:  c.node,
+	}
+	return nil
 }
 
 // IsLeader determines whether the current node is the leader node.
@@ -115,9 +243,9 @@ func (c *Consensus) Leader() (*model.ElectNode, error) {
 		return nil, err
 	}
 
-	for _, node := range clusterState.Nodes {
-		if node.State == model.NodeStateLeader {
-			return &node.Node, nil
+	for _, nodeWithState := range clusterState.Nodes {
+		if nodeWithState.State == model.NodeStateLeader {
+			return &nodeWithState.Node, nil
 		}
 	}
 
@@ -126,37 +254,47 @@ func (c *Consensus) Leader() (*model.ElectNode, error) {
 
 // ClusterState retrieves the current state of the cluster including all nodes.
 func (c *Consensus) ClusterState() (*model.ClusterState, error) {
-	g := errgroup.Group{}
 	clusterState := &model.ClusterState{
 		Nodes: map[string]*model.NodeWithState{
 			c.node.ID: {
-				Node:  c.node,
 				State: model.NodeState(c.fsm.Current()),
+				Node:  c.node,
 			},
 		},
 	}
 	stateMap := sync.Map{}
-	for rpcClient := range c.rpcClients.iterate() {
-		nodeAddr, clt := rpcClient.address, rpcClient.client
-		if nodeAddr == c.node.Address {
+	g := errgroup.Group{}
+	for _, peer := range c.cfg.Peers {
+		if c.isSelf(peer.ID, peer.Address) {
 			// skip self
 			continue
 		}
 
+		peerID := peer.ID
 		g.Go(func() error {
-			resp := model.NodeWithState{}
+			c.logger.Info("send state request to peer", "peer", peerID)
+			resp := &model.Response{}
 			// send state request
-			err := clt.Call("RpcHandler.State", nil, &resp)
+			err := c.transport.SendRequest(peerID, &model.Request{
+				Header:      c.buildHeaders(),
+				CommandCode: model.State,
+				Command:     nil,
+			}, resp)
 			if err != nil {
-				c.logger.Error("failed to get node state", "peer", nodeAddr)
-				return fmt.Errorf("failed to get node state, peer %s, err: %s", nodeAddr, err.Error())
+				c.logger.Error("failed to get node state", "peer", peerID, "err", err.Error())
+				return fmt.Errorf("failed to get node state, peer %s, err: %s", peerID, err.Error())
+			}
+			stateResponse := &model.NodeWithState{}
+			err = c.transport.Decode(resp.CommandResponse, stateResponse)
+			if err != nil {
+				c.logger.Error("failed to decode state response", "peer", peerID, "err", err.Error())
+				return fmt.Errorf("failed to decode state response, peer %s, err: %s", peerID, err.Error())
 			}
 
-			stateMap.Store(resp.Node.ID, &resp)
+			stateMap.Store(resp.Node.ID, stateResponse)
 			return nil
 		})
 	}
-
 	err := g.Wait()
 	if err != nil {
 		c.logger.Error("get cluster state error", "error", err.Error())
@@ -171,11 +309,8 @@ func (c *Consensus) ClusterState() (*model.ClusterState, error) {
 }
 
 // CurrentState returns the current election node state.
-func (c *Consensus) CurrentState() model.NodeWithState {
-	return model.NodeWithState{
-		State: model.NodeState(c.fsm.Current()),
-		Node:  c.node,
-	}
+func (c *Consensus) CurrentState() model.NodeState {
+	return model.NodeState(c.fsm.Current())
 }
 
 // Visualize returns a visualization of the current consensus state machine in Graphviz format.
@@ -183,12 +318,48 @@ func (c *Consensus) Visualize() string {
 	return fsm.Visualize(c.fsm)
 }
 
-func (c *Consensus) enterLeader(_ context.Context, ev *fsm.Event) {
+func (c *Consensus) initializeTransport() error {
+	// start the transport server
+	err := c.transport.Start(c.node.Address, c.HandleRequest, c.transportConfig)
+	if err != nil {
+		c.logger.Error("failed to start transport server", "error", err.Error())
+		return err
+	}
+
+	var peers []*model.Node
+	for _, peer := range c.cfg.Peers {
+		if c.isSelf(peer.ID, peer.Address) {
+			// skip self
+			continue
+		}
+		peers = append(peers, &model.Node{
+			ID:      peer.ID,
+			Address: peer.Address,
+			Tags:    peer.Tags,
+		})
+	}
+
+	// init transport clients
+	err = c.transport.InitConnections(peers, c.transportConfig)
+	if err != nil {
+		c.logger.Error("failed to init clients", "error", err.Error())
+		return err
+	}
+
+	c.logger.Info("success to init transport")
+	return nil
+}
+
+func (c *Consensus) buildHeaders() model.Header {
+	return model.Header{Node: c.node.Node}
+}
+
+func (c *Consensus) enterLeader(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become leader")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 	c.leaderChan = make(chan struct{}, 1)
 	go func() {
-		err := c.runLeader()
+		err := c.runLeader(ctx)
 		if err != nil {
 			c.logger.Error("failed to enter leader state", "err", err.Error())
 			return
@@ -196,7 +367,7 @@ func (c *Consensus) enterLeader(_ context.Context, ev *fsm.Event) {
 	}()
 }
 
-func (c *Consensus) runLeader() error {
+func (c *Consensus) runLeader(_ context.Context) error {
 	tk := time.NewTicker(c.cfg.HeartBeatInterval)
 	defer tk.Stop()
 
@@ -211,7 +382,7 @@ func (c *Consensus) runLeader() error {
 
 		select {
 		case <-c.leaderChan:
-			c.logger.Info("leave leader", "node", c.node.Address)
+			c.logger.Info("leave leader")
 			return nil
 		case <-tk.C:
 		}
@@ -224,12 +395,12 @@ func (c *Consensus) leaveLeader(_ context.Context, ev *fsm.Event) {
 	close(c.leaderChan)
 }
 
-func (c *Consensus) enterFollower(_ context.Context, ev *fsm.Event) {
+func (c *Consensus) enterFollower(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become follower")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 	c.followerChan = make(chan struct{}, 1)
 	go func() {
-		err := c.runFollower()
+		err := c.runFollower(ctx)
 		if err != nil {
 			c.logger.Error("failed to enter follower state", "err", err.Error())
 			return
@@ -237,7 +408,7 @@ func (c *Consensus) enterFollower(_ context.Context, ev *fsm.Event) {
 	}()
 }
 
-func (c *Consensus) runFollower() error {
+func (c *Consensus) runFollower(_ context.Context) error {
 	// set the heartbeat timeout to twice the heartbeat interval
 	heartbeatTimeout := c.cfg.HeartBeatInterval * 2
 	ts := time.NewTimer(heartbeatTimeout)
@@ -247,7 +418,7 @@ func (c *Consensus) runFollower() error {
 		case _, ok := <-c.followerChan:
 			if !ok {
 				// channel is closed
-				c.logger.Info("leave follower state", "node", c.node.Address)
+				c.logger.Info("leave follower state, channel is closed")
 				return nil
 			}
 			// reset the timer
@@ -259,8 +430,10 @@ func (c *Consensus) runFollower() error {
 			}
 			ts.Reset(heartbeatTimeout)
 		case <-ts.C:
+			c.logger.Info("leave follower state due to heartbeat timeout")
 			// heartbeat timeout
 			c.sendEvent(model.EventHeartbeatTimeout)
+			return nil
 		}
 	}
 }
@@ -271,12 +444,12 @@ func (c *Consensus) leaveFollower(_ context.Context, ev *fsm.Event) {
 	close(c.followerChan)
 }
 
-func (c *Consensus) enterCandidate(_ context.Context, ev *fsm.Event) {
+func (c *Consensus) enterCandidate(ctx context.Context, ev *fsm.Event) {
 	c.logger.Info("become candidate")
 	c.sendNodeStateTransition(model.NodeState(ev.Dst), model.NodeState(ev.Src), model.TransitionTypeEnter)
 	c.candidateChan = make(chan struct{}, 1)
 	go func() {
-		err := c.runCandidate()
+		err := c.runCandidate(ctx)
 		if err != nil {
 			c.logger.Error("failed to enter candidate state", "err", err.Error())
 			return
@@ -284,13 +457,13 @@ func (c *Consensus) enterCandidate(_ context.Context, ev *fsm.Event) {
 	}()
 }
 
-func (c *Consensus) runCandidate() error {
+func (c *Consensus) runCandidate(ctx context.Context) error {
 	if c.node.NoVote {
-		c.logger.Info("novote node, not participate in the election", "node", c.node.Address)
+		c.logger.Info("novote node, not participate in the election")
 		return nil
 	}
 
-	err := c.tryToBecomeLeader()
+	err := c.tryToBecomeLeader(ctx)
 	if err != nil {
 		c.logger.Error("failed to make the try to become leader", "err", err.Error())
 		return err
@@ -299,7 +472,7 @@ func (c *Consensus) runCandidate() error {
 	return nil
 }
 
-func (c *Consensus) tryToBecomeLeader() error {
+func (c *Consensus) tryToBecomeLeader(_ context.Context) error {
 	ts := time.NewTicker(c.cfg.ElectTimeout)
 	defer ts.Stop()
 
@@ -316,7 +489,7 @@ func (c *Consensus) tryToBecomeLeader() error {
 		c.incrementByOne()
 		// vote for self
 		voteCount := 1
-		voteChan := make(chan model.Node)
+		voteChan := make(chan model.Node, len(c.cfg.Peers))
 		go func() {
 			// send vote request to all peer nodes
 			err := c.sendRequestVote(voteChan)
@@ -407,33 +580,44 @@ func (c *Consensus) runEventHandler() {
 
 func (c *Consensus) sendHeartBeat(errorCount *int) {
 	g := errgroup.Group{}
-	for rpcClient := range c.rpcClients.iterate() {
-		nodeAddr, clt := rpcClient.address, rpcClient.client
-		if nodeAddr == c.node.Address {
+	for _, peer := range c.cfg.Peers {
+		if c.isSelf(peer.ID, peer.Address) {
 			// skip self
 			continue
 		}
+
+		peerID := peer.ID
 		g.Go(func() error {
-			resp := &model.HeartBeatResponse{}
+			c.logger.Debug("send heartbeat to peer", "peer", peerID)
+			resp := &model.Response{}
 			// send heartbeat request to peer
-			err := clt.Call("RpcHandler.HeartBeat", &model.HeartBeatRequest{NodeId: c.node.ID, Term: c.term}, resp)
+			err := c.transport.SendRequest(peerID, &model.Request{
+				Header:      c.buildHeaders(),
+				CommandCode: model.HeartBeat,
+				Command:     &model.HeartBeatRequest{NodeId: c.node.ID, Term: c.term},
+			}, resp)
 			if err != nil {
 				// error count
 				*errorCount += 1
-				c.logger.Error("failed to send heartbeat", "peer", nodeAddr, "error", err.Error())
-				return fmt.Errorf("heartbeat, failed to send heartbeat, peer %s, error %s", nodeAddr, err.Error())
+				c.logger.Error("failed to send heartbeat", "peer", peerID, "error", err.Error())
+				return fmt.Errorf("heartbeat, failed to send heartbeat, peer %s, error %s", peerID, err.Error())
 			}
-			if !resp.Ok {
+			hbResponse := &model.HeartBeatResponse{}
+			err = c.transport.Decode(resp.CommandResponse, hbResponse)
+			if err != nil {
+				*errorCount += 1
+				return fmt.Errorf("heartbeat, peer %s, bad response", peerID)
+			}
+			if !hbResponse.Ok {
 				// error count
 				*errorCount += 1
-				return fmt.Errorf("heartbeat, peer %s response not ok, message %s", nodeAddr, resp.Message)
+				return fmt.Errorf("heartbeat, peer %s response not ok, message %s", peerID, hbResponse.Message)
 			}
 
-			c.logger.Debug("send heartbeat to peer", "peer", nodeAddr)
+			c.logger.Debug("send heartbeat to peer", "peer", peerID)
 			return nil
 		})
 	}
-
 	if err := g.Wait(); err != nil {
 		c.logger.Error("leader, heartbeat error", "error", err.Error())
 	}
@@ -442,28 +626,39 @@ func (c *Consensus) sendHeartBeat(errorCount *int) {
 func (c *Consensus) sendRequestVote(voteChan chan model.Node) error {
 	g := errgroup.Group{}
 	defer close(voteChan)
-
-	for rpcClient := range c.rpcClients.iterate() {
-		nodeAddr, clt := rpcClient.address, rpcClient.client
-		if nodeAddr == c.node.Address {
+	for _, peer := range c.cfg.Peers {
+		if c.isSelf(peer.ID, peer.Address) {
 			// skip self
 			continue
 		}
 
+		peerID := peer.ID
 		g.Go(func() error {
-			resp := &model.RequestVoteResponse{}
+			c.logger.Info("send vote request to peer", "peer", peerID)
+			resp := &model.Response{}
 			// send vote request
-			err := clt.Call("RpcHandler.RequestVote", &model.RequestVoteRequest{
-				NodeId:   c.node.ID,
-				Term:     c.term,
-				NodeAddr: c.node.Address,
-			}, &resp)
+			err := c.transport.SendRequest(peerID, &model.Request{
+				Header:      c.buildHeaders(),
+				CommandCode: model.RequestVote,
+				Command: model.RequestVoteRequest{
+					NodeId:   peerID,
+					Term:     c.term,
+					NodeAddr: c.node.Address,
+				},
+			}, resp)
 			if err != nil {
-				c.logger.Error("failed to get vote", "peer", nodeAddr)
-				return fmt.Errorf("failed to get vote, peer %s, err: %s", nodeAddr, err.Error())
+				c.logger.Error("failed to get vote", "peer", peerID, "err", err.Error())
+				return fmt.Errorf("failed to get vote, peer %s, err: %s", peerID, err)
 			}
-			if !resp.Vote {
-				c.logger.Info("peer disagrees with voting for you", "peer", nodeAddr, "message", resp.Message)
+			voteResp := &model.RequestVoteResponse{}
+			err = c.transport.Decode(resp.CommandResponse, voteResp)
+			if err != nil {
+				c.logger.Error("vote response, bad response", "peer", peerID, "err", err.Error())
+				return fmt.Errorf("vote response, peer %s, bad response: %s", peerID, err)
+			}
+
+			if !voteResp.Vote {
+				c.logger.Info("peer disagrees with voting for you", "peer", peerID, "message", voteResp.Message)
 				return nil
 			}
 
@@ -473,17 +668,20 @@ func (c *Consensus) sendRequestVote(voteChan chan model.Node) error {
 			case voteChan <- resp.Node:
 				// receive a valid vote from peer node
 			}
-			c.logger.Info("get voting", "peer", nodeAddr)
+			c.logger.Info("get voting", "peer", peerID)
 			return nil
 		})
 	}
-
 	if err := g.Wait(); err != nil {
 		c.logger.Error("candidate, request voting error", "error", err.Error())
 		return err
 	}
 
 	return nil
+}
+
+func (c *Consensus) isSelf(nodeID, nodeAddress string) bool {
+	return c.node.ID == nodeID || c.node.Address == nodeAddress
 }
 
 func (c *Consensus) sendNodeStateTransition(state, srcState model.NodeState, transType model.TransitionType) {
@@ -590,52 +788,4 @@ func (t *termCache) incrementByOne() {
 	t.term += 1
 	t.voted = false
 	t.voteFor = ""
-}
-
-type rpcClients struct {
-	clients map[string]*rpc.Client
-	m       sync.RWMutex
-}
-
-//func (r *rpcClients) get(addr string) *rpc.Client {
-//	r.m.RLock()
-//	defer r.m.RUnlock()
-//
-//	if clt, ok := r.clients[addr]; ok {
-//		return clt
-//	}
-//
-//	return nil
-//}
-
-func (r *rpcClients) put(addr string, clt *rpc.Client) {
-	r.m.Lock()
-	defer r.m.Unlock()
-
-	if r.clients == nil {
-		r.clients = map[string]*rpc.Client{}
-	}
-	r.clients[addr] = clt
-}
-
-func (r *rpcClients) iterate() <-chan *rpcClient {
-	c := make(chan *rpcClient)
-	go func() {
-		r.m.RLock()
-		defer r.m.RUnlock()
-
-		for addr, clt := range r.clients {
-			c <- &rpcClient{
-				address: addr,
-				client:  clt,
-			}
-		}
-		close(c)
-	}()
-	return c
-}
-
-type rpcClient struct {
-	address string
-	client  *rpc.Client
 }

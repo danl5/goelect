@@ -4,8 +4,10 @@ go 1.21
 
 require (
 	github.com/looplab/fsm v1.0.1
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/silenceper/pool v1.0.0
 	github.com/stretchr/testify v1.9.0
+	github.com/ugorji/go/codec v1.2.12
 	golang.org/x/sync v0.7.0
 )
 
