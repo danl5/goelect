@@ -117,11 +117,11 @@ func (s *Server) Start(listenAddress string, handler model.CommandHandler, serve
 		return err
 	}
 
-	rpcHandler := &RPCHandler{
+	s.rpcHandler = &RPCHandler{
 		CmdHandler: handler,
 	}
 
-	err = s.startServer(listenAddress, rpcHandler, cfg)
+	err = s.startServer(listenAddress, s.rpcHandler, cfg)
 	if err != nil {
 		s.logger.Error("failed to start rpc server", "error", err.Error())
 		return err
