@@ -24,9 +24,9 @@ func (n NodeState) String() string {
 
 // Node represents a node instance
 type Node struct {
-	ID      string
-	Address string
-	Tags    map[string]string
+	ID      string            `json:"id" mapstructure:"id"`
+	Address string            `json:"address" mapstructure:"address"`
+	Tags    map[string]string `json:"tags" mapstructure:"tags"`
 }
 
 func (n *Node) Validate() error {
@@ -41,7 +41,7 @@ func (n *Node) Validate() error {
 
 // ElectNode represents a node instance with elect meta
 type ElectNode struct {
-	Node
+	Node `json:"node" mapstructure:"node"`
 
-	NoVote bool
+	NoVote bool `json:"no_vote" mapstructure:"no_vote"`
 }

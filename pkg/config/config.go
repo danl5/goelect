@@ -10,7 +10,7 @@ type Config struct {
 	ElectTimeout time.Duration `json:"elect_timeout,omitempty"`
 	// HeartBeatInterval is interval duration for heartbeat between leader and followers
 	HeartBeatInterval time.Duration `json:"heartbeat_timeout,omitempty"`
-	// ConnectTimeout represents the timeout duration for a rpc connection
+	// ConnectTimeout represents the timeout duration for a transport connection
 	ConnectTimeout time.Duration `json:"connect_timeout,omitempty"`
 	// Peers contain information about all nodes in the cluster.
 	Peers []NodeConfig `json:"peers,omitempty"`
