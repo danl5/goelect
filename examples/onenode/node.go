@@ -49,23 +49,12 @@ func newElect() (*goelect.Elect, error) {
 	if err != nil {
 		return nil, err
 	}
-	// rpc transport config
-	rpcTransportConfig := &rpc.Config{
-		ServerCAs:        nil,
-		ServerKey:        "",
-		ServerCert:       "",
-		ServerSkipVerify: false,
-		ClientCAs:        nil,
-		ClientCert:       "",
-		ClientKey:        "",
-		ClientSkipVerify: false,
-		ConnectTimeout:   0,
-	}
 
 	// new elect
 	e, err := goelect.NewElect(
 		rpcTransport,
-		rpcTransportConfig,
+		// rpc transport config
+		&rpc.Config{},
 		&goelect.ElectConfig{
 			ElectTimeout:      200,
 			HeartBeatInterval: 150,

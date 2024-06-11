@@ -7,7 +7,7 @@ clean:
 	@go clean
 	rm --force "xx.out"
 test:
-	@go test
+	@go test ./...
 check:
 	@go fmt ./
 	@go vet ./

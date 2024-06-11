@@ -38,26 +38,35 @@ type ElectConfig struct {
 
 Create an Elect instance:
 ```go
-e, err := goelect.NewElect(&goelect.ElectConfig{
-		ElectTimeout:      200,
-		HeartBeatInterval: 150,
-		ConnectTimeout:    10,
-		Peers:             peerNodes,
-		// state transition callbacks
-		CallBacks: &goelect.StateCallBacks{
-			EnterLeader:    enterLeader,
-			LeaveLeader:    leaveLeader,
-			EnterFollower:  enterFollower,
-			LeaveFollower:  leaveFollower,
-			EnterCandidate: enterCandidate,
-			LeaveCandidate: leaveCandidate,
-		},
-		// self node
-		Node: goelect.Node{
-			Address: *nodeAddress,
-			ID:      *nodeAddress,
-		},
-	}, slog.Default())
+ // use the built-in RPC as the transport layer. 
+ rpcTransport, err := rpc.NewRPC(logger)
+ if err != nil {
+  return nil, err
+ }
+ e, err := goelect.NewElect(
+    rpcTransport,
+    // rpc transport config
+    &rpc.Config{},
+    &goelect.ElectConfig{
+        ElectTimeout:      200,
+        HeartBeatInterval: 150,
+        ConnectTimeout:    10,
+        Peers:             peerNodes,
+        // state transition callbacks
+        CallBacks: &goelect.StateCallBacks{
+            EnterLeader:    enterLeader,
+            LeaveLeader:    leaveLeader,
+            EnterFollower:  enterFollower,
+            LeaveFollower:  leaveFollower, 
+            EnterCandidate: enterCandidate,
+            LeaveCandidate: leaveCandidate,
+        },
+        // self node
+        Node: goelect.Node{
+            Address: *nodeAddress,
+            ID:      *nodeAddress,
+        },
+    }, logger)
 ```
 Start the Elect:
 ```go
