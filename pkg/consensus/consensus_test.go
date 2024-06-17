@@ -8,14 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/danl5/goelect/pkg/common"
-	"github.com/danl5/goelect/pkg/log"
 	"github.com/danl5/goelect/pkg/model"
 )
 
 func TestConsensus_HeartBeat(t *testing.T) {
 	type fields struct {
 		termCache *termCache
-		logger    log.Logger
+		logger    *slog.Logger
 		eventChan chan model.NodeEvent
 	}
 	type args struct {
@@ -93,7 +92,7 @@ func TestConsensus_HeartBeat(t *testing.T) {
 func TestConsensus_RequestVote(t *testing.T) {
 	type fields struct {
 		termCache *termCache
-		logger    log.Logger
+		logger    *slog.Logger
 		fsm       *fsm.FSM
 		eventChan chan model.NodeEvent
 	}

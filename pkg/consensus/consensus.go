@@ -3,6 +3,7 @@ package consensus
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"sync"
 	"time"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/danl5/goelect/pkg/common"
 	"github.com/danl5/goelect/pkg/config"
-	"github.com/danl5/goelect/pkg/log"
 	"github.com/danl5/goelect/pkg/model"
 )
 
@@ -21,14 +21,18 @@ func NewConsensus(
 	trans model.Transport,
 	transConfig model.TransportConfig,
 	cfg *config.Config,
-	logger log.Logger) (*Consensus, error) {
+	logger *slog.Logger) (*Consensus, error) {
 	if err := node.Validate(); err != nil {
 		return nil, err
 	}
 
+	if logger == nil {
+		return nil, fmt.Errorf("new consensus, logger is nil")
+	}
+
 	c := &Consensus{
 		cfg:             cfg,
-		logger:          logger,
+		logger:          logger.With("component", "consensus"),
 		node:            node,
 		termCache:       &termCache{},
 		transport:       trans,
@@ -52,7 +56,7 @@ type Consensus struct {
 	// cfg is the configuration for the consensus
 	cfg *config.Config
 	// logger
-	logger log.Logger
+	logger *slog.Logger
 
 	// node is the elect node of the model
 	node model.ElectNode
