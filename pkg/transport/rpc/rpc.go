@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/rpc"
 	"os"
@@ -12,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danl5/goelect/pkg/log"
 	"github.com/danl5/goelect/pkg/model"
 	"github.com/mitchellh/mapstructure"
 	"github.com/silenceper/pool"
@@ -30,13 +30,17 @@ const (
 	poolMaxCap = 20
 )
 
-func NewRPC(logger log.Logger) (*RPC, error) {
+func NewRPC(logger *slog.Logger) (*RPC, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("new rpc, logger is nil")
+	}
+
 	rpc := &RPC{
 		Server: Server{
-			logger: logger,
+			logger: logger.With("component", "rpc server"),
 		},
 		Client: Client{
-			logger: logger,
+			logger: logger.With("component", "rpc client"),
 		},
 	}
 
@@ -102,7 +106,7 @@ func (r *RPC) Decode(raw any, target any) error {
 
 type Server struct {
 	rpcHandler *RPCHandler
-	logger     log.Logger
+	logger     *slog.Logger
 }
 
 // Start initiates the server to begin listening on the specified address.
@@ -209,7 +213,7 @@ type Client struct {
 	// string -> pool.Pool
 	clients sync.Map
 
-	logger log.Logger
+	logger *slog.Logger
 }
 
 // InitConnections initializes a set of connections to the given nodes.

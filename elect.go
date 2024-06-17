@@ -2,11 +2,12 @@ package goelect
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/danl5/goelect/pkg/config"
 	"github.com/danl5/goelect/pkg/consensus"
-	"github.com/danl5/goelect/pkg/log"
 	"github.com/danl5/goelect/pkg/model"
 )
 
@@ -26,7 +27,10 @@ func NewElect(
 	trans model.Transport,
 	transConfig model.TransportConfig,
 	cfg *ElectConfig,
-	logger log.Logger) (*Elect, error) {
+	logger *slog.Logger) (*Elect, error) {
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	}
 	var peers []config.NodeConfig
 	for _, n := range cfg.Peers {
 		peers = append(peers, config.NodeConfig{
@@ -73,7 +77,7 @@ func NewElect(
 	}
 	return &Elect{
 		cfg:             cfg,
-		logger:          logger,
+		logger:          logger.With("component", "elect"),
 		callBackTimeout: cfg.CallBackTimeout,
 		consensus:       c,
 		callBacks:       cfg.CallBacks,
@@ -95,7 +99,7 @@ type Elect struct {
 	// cfg is the configuration for the election
 	cfg *ElectConfig
 	// logger is used for logging
-	logger log.Logger
+	logger *slog.Logger
 }
 
 // Run is the main function of the Elect struct

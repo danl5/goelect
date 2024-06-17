@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ func newElect() (*goelect.Elect, error) {
 		peerNodes = append(peerNodes, goelect.Node{Address: pa, ID: pa})
 	}
 
-	logger := slog.Default()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	// rpc transport
 	rpcTransport, err := rpc.NewRPC(logger)
