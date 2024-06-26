@@ -109,13 +109,13 @@ func (e *Elect) Run() error {
 	// run the consensus algorithm
 	stateChan, err := e.consensus.Run()
 	if err != nil {
-		e.logger.Error("elect, failed to run elect", "error", err.Error())
+		e.logger.Error("failed to run elect", "error", err.Error())
 		return err
 	}
 	// handle state transitions in a separate goroutine
 	go e.handleStateTransition(context.Background(), stateChan)
 
-	e.logger.Info("elect, elect started")
+	e.logger.Info("elect started")
 	return nil
 }
 
@@ -162,11 +162,11 @@ func (e *Elect) handleStateTransition(ctx context.Context, stateChan <-chan mode
 		select {
 		case st, ok := <-stateChan:
 			if !ok {
-				e.logger.Info("elect, state transition chan is closed")
+				e.logger.Info("state transition chan is closed")
 				return
 			}
 
-			e.logger.Debug("elect, elect state transition", "type", st.Type.String(), "state", st.State, "src", st.SrcState)
+			e.logger.Debug("elect state transition", "type", st.Type.String(), "state", st.State, "src", st.SrcState)
 			var err error
 			switch st.Type {
 			case model.TransitionTypeLeave:
@@ -193,7 +193,7 @@ func (e *Elect) handleStateTransition(ctx context.Context, stateChan <-chan mode
 				e.sendError(err)
 			}
 		case <-ctx.Done():
-			e.logger.Info("elect, stop state transition handler")
+			e.logger.Info("stop state transition handler")
 			return
 		}
 	}
