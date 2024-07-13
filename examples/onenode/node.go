@@ -43,7 +43,9 @@ func newElect() (*goelect.Elect, error) {
 		peerNodes = append(peerNodes, goelect.Node{Address: pa, ID: pa})
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
 
 	// rpc transport
 	rpcTransport, err := rpc.NewRPC(logger)

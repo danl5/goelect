@@ -257,7 +257,7 @@ func (c *Client) SendRequest(nodeId string, request *model.Request, response *mo
 		}
 	}()
 
-	c.logger.Debug("send rpc request", "command", request.CommandCode, "to", nodeId)
+	c.logger.Debug("send rpc request", "command", request.CommandCode.String(), "to", nodeId)
 	return nil
 }
 

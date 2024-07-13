@@ -74,11 +74,15 @@ func TestConsensus_HeartBeat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Consensus{
-				termCache: tt.fields.termCache,
-				logger:    tt.fields.logger,
-				eventChan: tt.fields.eventChan,
-				fsm:       &fsm.FSM{},
+				termCache:       tt.fields.termCache,
+				logger:          tt.fields.logger,
+				eventChan:       tt.fields.eventChan,
+				fsm:             &fsm.FSM{},
+				followerChan:    make(chan struct{}, 10),
+				inFollowerState: true,
 			}
+			c.initializeFsm()
+			c.fsm.SetState(model.NodeStateFollower.String())
 			if err := c.HeartBeat(tt.args.args, tt.args.reply); (err != nil) != tt.wantErr {
 				t.Errorf("HeartBeat() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -91,10 +95,13 @@ func TestConsensus_HeartBeat(t *testing.T) {
 
 func TestConsensus_RequestVote(t *testing.T) {
 	type fields struct {
-		termCache *termCache
-		logger    *slog.Logger
-		fsm       *fsm.FSM
-		eventChan chan model.NodeEvent
+		termCache   *termCache
+		logger      *slog.Logger
+		fsm         *fsm.FSM
+		eventChan   chan model.NodeEvent
+		isLeader    bool
+		isFollower  bool
+		isCandidate bool
 	}
 	type args struct {
 		args  *model.RequestVoteRequest
@@ -129,6 +136,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
 				fsm:       leaderFsm,
+				isLeader:  true,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -151,6 +159,7 @@ func TestConsensus_RequestVote(t *testing.T) {
 				logger:    slog.Default(),
 				eventChan: make(chan model.NodeEvent, 10),
 				fsm:       leaderFsm,
+				isLeader:  true,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -170,9 +179,10 @@ func TestConsensus_RequestVote(t *testing.T) {
 				termCache: &termCache{
 					term: 1,
 				},
-				logger:    slog.Default(),
-				eventChan: make(chan model.NodeEvent, 10),
-				fsm:       followerFsm,
+				logger:     slog.Default(),
+				eventChan:  make(chan model.NodeEvent, 10),
+				fsm:        followerFsm,
+				isFollower: true,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -192,9 +202,10 @@ func TestConsensus_RequestVote(t *testing.T) {
 				termCache: &termCache{
 					term: 2,
 				},
-				logger:    slog.Default(),
-				eventChan: make(chan model.NodeEvent, 10),
-				fsm:       followerFsm,
+				logger:     slog.Default(),
+				eventChan:  make(chan model.NodeEvent, 10),
+				fsm:        followerFsm,
+				isFollower: true,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -214,9 +225,10 @@ func TestConsensus_RequestVote(t *testing.T) {
 				termCache: &termCache{
 					term: 1,
 				},
-				logger:    slog.Default(),
-				eventChan: make(chan model.NodeEvent, 10),
-				fsm:       candidateFsm,
+				logger:      slog.Default(),
+				eventChan:   make(chan model.NodeEvent, 10),
+				fsm:         candidateFsm,
+				isCandidate: true,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -236,9 +248,10 @@ func TestConsensus_RequestVote(t *testing.T) {
 				termCache: &termCache{
 					term: 2,
 				},
-				logger:    slog.Default(),
-				eventChan: make(chan model.NodeEvent, 10),
-				fsm:       candidateFsm,
+				logger:      slog.Default(),
+				eventChan:   make(chan model.NodeEvent, 10),
+				fsm:         candidateFsm,
+				isCandidate: true,
 			},
 			args: args{
 				args: &model.RequestVoteRequest{
@@ -260,6 +273,14 @@ func TestConsensus_RequestVote(t *testing.T) {
 				logger:    tt.fields.logger,
 				fsm:       tt.fields.fsm,
 				eventChan: tt.fields.eventChan,
+			}
+			switch {
+			case tt.fields.isLeader:
+				c.inLeaderState = true
+			case tt.fields.isFollower:
+				c.inFollowerState = true
+			case tt.fields.isCandidate:
+				c.inCandidateState = true
 			}
 			if err := c.RequestVote(tt.args.args, tt.args.reply); (err != nil) != tt.wantErr {
 				t.Errorf("RequestVote() error = %v, wantErr %v", err, tt.wantErr)
